@@ -1,0 +1,324 @@
+using System;
+using System.Collections;
+using TMPro;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class GameManager : MonoBehaviour
+{
+    [Header("Scene Flow")]
+    public string resultSceneName = "ResultScene";
+
+    [Header("Session")]
+    public int courseIdOverride = 0; // if 0, use PlayerSessionState.courseId
+
+    [Header("Quiz")]
+    public QuizUIManager quizUI;
+
+    [Header("HUD (Optional)")]
+    public TMP_Text hudText;
+    public TMP_Text healthText;
+
+    [Header("Gameplay")]
+    public int startingHealth = 3;
+
+    private int health;
+    private APIManager.GameQuestion[] cachedQuestions;
+    private bool bootstrapped = false;
+    private bool loadingQuestions = false;
+    private bool endingSession = false;
+    private bool quizOpen = false;
+    private bool bootstrapping = false;
+
+    public bool IsReadyForQuiz()
+    {
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        return bootstrapped
+            && !bootstrapping
+            && !loadingQuestions
+            && !endingSession
+            && !quizOpen
+            && st != null
+            && st.sessionId > 0
+            && cachedQuestions != null
+            && cachedQuestions.Length > 0;
+    }
+
+    // Session stats (for ResultScene)
+    private int correctCount = 0;
+    private int totalAnswered = 0;
+    private int sessionXpGained = 0;
+    private int sessionStarsGained = 0;
+
+    void Start()
+    {
+        health = Mathf.Max(1, startingHealth);
+        UpdateHUD();
+        StartCoroutine(BootstrapSession());
+    }
+
+    IEnumerator BootstrapSession()
+    {
+        if (bootstrapping) yield break;
+        bootstrapping = true;
+
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        if (st == null)
+        {
+            Debug.LogError("[Game] PlayerSessionState missing in scene.");
+            bootstrapping = false;
+            yield break;
+        }
+        if (APIManager.EnsureInstance() == null)
+        {
+            Debug.LogError("[Game] APIManager missing in scene.");
+            bootstrapping = false;
+            yield break;
+        }
+        if (st.playerId <= 0)
+        {
+            Debug.LogError("[Game] No playerId set. Go back to menu and create/load a player.");
+            bootstrapping = false;
+            yield break;
+        }
+
+        int courseId = courseIdOverride > 0 ? courseIdOverride : st.courseId;
+        if (courseId <= 0) courseId = 1;
+        st.courseId = courseId;
+
+        Debug.Log($"[Game] Bootstrap playerId={st.playerId} courseId={st.courseId} sessionId={st.sessionId}");
+
+        bool ok = false;
+        string err = "";
+
+        // Start session
+        yield return APIManager.Instance.StartSession(
+            st.playerId,
+            st.courseId,
+            (sid) => { st.sessionId = sid; ok = true; },
+            (e) => { ok = false; err = e; }
+        );
+        if (!ok)
+        {
+            Debug.LogError("[Game] StartSession failed: " + err);
+            bootstrapping = false;
+            yield break;
+        }
+
+        // Load questions
+        yield return EnsureQuestionsLoaded();
+        bootstrapped = (cachedQuestions != null && cachedQuestions.Length > 0);
+        if (!bootstrapped)
+        {
+            Debug.LogError("[Game] Bootstrap completed but no questions were loaded. Quiz triggers will be blocked.");
+        }
+        UpdateHUD();
+        bootstrapping = false;
+    }
+
+    IEnumerator EnsureQuestionsLoaded()
+    {
+        if (loadingQuestions) yield break;
+        if (cachedQuestions != null && cachedQuestions.Length > 0) yield break;
+
+        loadingQuestions = true;
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+
+        bool ok = false;
+        string err = "";
+        yield return APIManager.Instance.GetQuestions(
+            st.courseId,
+            st.playerId,
+            (qs) => { cachedQuestions = qs; ok = true; },
+            (e) => { ok = false; err = e; }
+        );
+        if (!ok)
+        {
+            Debug.LogError("[Game] GetQuestions failed: " + err);
+        }
+        loadingQuestions = false;
+    }
+
+    public void TriggerQuiz()
+    {
+        if (endingSession)
+        {
+            Debug.LogWarning("[Game] TriggerQuiz blocked: session is ending.");
+            return;
+        }
+        if (quizOpen)
+        {
+            Debug.LogWarning("[Game] TriggerQuiz blocked: quiz already open.");
+            return;
+        }
+        if (!bootstrapped)
+        {
+            Debug.LogWarning("[Game] TriggerQuiz blocked: game not ready yet (session/questions still loading).");
+            return;
+        }
+        if (quizUI == null)
+        {
+            quizUI = FindObjectOfType<QuizUIManager>();
+            if (quizUI == null)
+            {
+                Debug.LogError("[Game] QuizUIManager not found.");
+                return;
+            }
+        }
+
+        if (cachedQuestions == null || cachedQuestions.Length == 0)
+        {
+            StartCoroutine(TriggerQuizWhenReady());
+            return;
+        }
+
+        quizOpen = true;
+        quizUI.ShowQuiz(cachedQuestions, OnQuizDone);
+    }
+
+    IEnumerator TriggerQuizWhenReady()
+    {
+        yield return EnsureQuestionsLoaded();
+        if (cachedQuestions != null && cachedQuestions.Length > 0)
+        {
+            TriggerQuiz();
+        }
+    }
+
+    void OnQuizDone(bool isCorrect)
+    {
+        quizOpen = false;
+        totalAnswered++;
+        if (isCorrect)
+        {
+            correctCount++;
+            AddXP(50);
+            StartCoroutine(PushProgressDelta(xpDelta: 50, starsDelta: 0));
+        }
+        else
+        {
+            TakeDamage(1);
+        }
+
+        UpdateHUD();
+    }
+
+    public void AddXP(int amount)
+    {
+        sessionXpGained = Mathf.Max(0, sessionXpGained + amount);
+    }
+
+    public void AddStar(int amount)
+    {
+        sessionStarsGained = Mathf.Max(0, sessionStarsGained + amount);
+    }
+
+    public void TakeDamage(int amount)
+    {
+        health = Mathf.Max(0, health - Mathf.Max(0, amount));
+        if (health <= 0)
+        {
+            EndRunToResults();
+        }
+        UpdateHUD();
+    }
+
+    IEnumerator PushProgressDelta(int xpDelta, int starsDelta)
+    {
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        if (st == null || st.playerId <= 0) yield break;
+
+        yield return APIManager.Instance.UpdateProgress(
+            st.playerId,
+            xpDelta,
+            starsDelta,
+            (resp) =>
+            {
+                st.xp = resp.xp;
+                st.stars = resp.stars;
+                st.gameLevel = resp.game_level;
+            },
+            (err) => Debug.LogWarning("[API] UpdateProgress failed: " + err)
+        );
+        UpdateHUD();
+    }
+
+    public void CompleteLevel()
+    {
+        EndRunToResults();
+    }
+
+    void EndRunToResults()
+    {
+        if (endingSession) return;
+        StartCoroutine(EndSessionAndLoadResults());
+    }
+
+    IEnumerator EndSessionAndLoadResults()
+    {
+        endingSession = true;
+        // Block quiz while ending; also avoids a late SubmitAnswer using a cleared sessionId.
+        quizOpen = false;
+        // Safety: ensure the game is not left paused if the quiz UI was open.
+        Time.timeScale = 1f;
+
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        if (st == null || APIManager.Instance == null)
+        {
+            SceneManager.LoadScene(resultSceneName);
+            endingSession = false;
+            yield break;
+        }
+
+        st.lastCorrect = correctCount;
+        st.lastTotal = totalAnswered;
+        st.lastXpGained = sessionXpGained;
+        st.lastStarsGained = sessionStarsGained;
+
+        Debug.Log($"[Game] EndSession start playerId={st.playerId} courseId={st.courseId} sessionId={st.sessionId} correct={correctCount} total={totalAnswered}");
+
+        if (st.sessionId > 0)
+        {
+            bool ok = false;
+            string err = "";
+            yield return APIManager.Instance.EndSession(
+                st.sessionId,
+                (data) =>
+                {
+                    ok = true;
+                    st.lastFinalScore = data.final_score;
+                    st.lastDurationMs = data.duration_ms;
+                    st.lastNextLevel = data.next_level;
+                    st.lastRecommendedDifficulty = data.recommended_difficulty ?? "";
+                },
+                (e) => { ok = false; err = e; }
+            );
+            if (!ok)
+            {
+                Debug.LogWarning("[Game] EndSession failed: " + err);
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[Game] EndSession skipped: sessionId is missing (0).");
+        }
+
+        // Clear current session id so we don't accidentally reuse it.
+        st.sessionId = 0;
+
+        SceneManager.LoadScene(resultSceneName);
+        endingSession = false;
+    }
+
+    void UpdateHUD()
+    {
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+
+        if (healthText != null) healthText.text = "HP: " + health;
+        if (hudText != null)
+        {
+            string p = (st != null && st.playerId > 0) ? $"Player {st.playerId} L{st.gameLevel} XP {st.xp} Stars {st.stars}" : "No player";
+            hudText.text = p + $"\nQuiz: {correctCount}/{totalAnswered}  +XP {sessionXpGained}";
+        }
+    }
+}

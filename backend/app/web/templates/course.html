@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="card">
+    <h2>Course #{{ course.id }}: {{ course.subject }}</h2>
+    <div class="meta">
+      <div><b>Level:</b> {{ course.level }}</div>
+      <div><b>Created:</b> {{ course.created_at }}</div>
+      <div><b>File:</b> {{ course.file_path or "n/a" }}</div>
+    </div>
+    <p class="desc">{{ course.description }}</p>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h3>Results</h3>
+      <canvas id="resultsChart" data-course-id="{{ course.id }}"></canvas>
+      <div class="small" id="resultsSummary"></div>
+    </section>
+    <section class="card">
+      <h3>Emotion Summary</h3>
+      <canvas id="emotionChart" data-course-id="{{ course.id }}"></canvas>
+      <div class="small">This is populated from stored <code>/emotion/analyze</code> events.</div>
+    </section>
+  </div>
+{% endblock %}
+

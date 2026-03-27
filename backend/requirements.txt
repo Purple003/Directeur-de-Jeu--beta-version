@@ -1,0 +1,34 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+psycopg2-binary
+python-dotenv
+pydantic>=2.0
+requests
+python-multipart
+
+# Dashboard
+jinja2
+
+# AI pipeline
+langchain
+langchain-community
+pymupdf
+numpy
+opencv-python
+mediapipe
+deepface
+
+# Vector store (FAISS wheels may not be available on native Windows pip; use WSL/Conda if needed)
+faiss-cpu; platform_system != "Windows"
+
+# Auth
+passlib[bcrypt]
+python-jose[cryptography]
+
+# Migrations
+alembic
+
+# Legacy extractors kept for compatibility (can be removed once LangChain pipeline is default)
+PyPDF2
+python-docx

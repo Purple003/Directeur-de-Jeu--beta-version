@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="grid">
+    <section class="card">
+      <h2>Platform Analytics</h2>
+      <div class="meta">
+        <div><b>Total courses:</b> {{ summary.total_courses }}</div>
+        <div><b>Total players:</b> {{ summary.total_players }}</div>
+        <div><b>Total sessions:</b> {{ summary.total_sessions }}</div>
+        <div><b>Total answers:</b> {{ summary.total_answers }}</div>
+        <div><b>Overall accuracy:</b> {{ (summary.accuracy * 100) | round(1) }}%</div>
+      </div>
+      <p class="hint">This aggregates stored answers/sessions and updates as Unity gameplay runs.</p>
+    </section>
+
+    <section class="card">
+      <h3>Emotion Summary</h3>
+      <div class="small">Counts across all stored emotion events.</div>
+      <div class="table">
+        <div class="row head"><div>Emotion</div><div>Count</div></div>
+        {% for e in emotions %}
+          <div class="row"><div>{{ e.emotion }}</div><div>{{ e.count }}</div></div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+{% endblock %}
+

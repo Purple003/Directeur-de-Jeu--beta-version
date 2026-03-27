@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="card">
+    <h2>Sessions</h2>
+    <div class="table">
+      <div class="row head">
+        <div>ID</div><div>Player</div><div>Course</div><div>Started</div><div>Ended</div><div>Duration</div><div>Score</div><div>Accuracy</div>
+      </div>
+      {% for s in sessions %}
+        <div class="row">
+          <div>{{ s.id }}</div>
+          <div>{{ s.player_name }}</div>
+          <div>{{ s.course_subject }}</div>
+          <div>{{ s.started_at }}</div>
+          <div>{{ s.ended_at or "-" }}</div>
+          <div>{{ s.duration_s }}</div>
+          <div>{{ s.final_score or "-" }}</div>
+          <div>{{ (s.accuracy * 100) | round(1) }}%</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
+

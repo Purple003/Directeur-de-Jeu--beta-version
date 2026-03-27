@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or "Adaptive Serious Game" }}</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="/static/js/dashboard.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">ASG</div>
+        <div class="brand-text">
+          <div class="brand-title">Adaptive Serious Game</div>
+          <div class="brand-subtitle">Professor Dashboard</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="/dashboard" class="nav-link">Courses</a>
+        <a href="/dashboard/players" class="nav-link">Players</a>
+        <a href="/dashboard/sessions" class="nav-link">Sessions</a>
+        <a href="/dashboard/analytics" class="nav-link">Analytics</a>
+        <form action="/dashboard/logout" method="post" style="margin:0;">
+          <button class="nav-link" style="border:none;background:transparent;cursor:pointer;">Logout</button>
+        </form>
+      </nav>
+    </header>
+
+    <main class="container">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      <span>Backend MVP</span>
+    </footer>
+  </body>
+</html>

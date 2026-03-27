@@ -1,0 +1,52 @@
+# --- Secrets / env files ---
+.env
+.env.*
+backend/.env
+
+# --- Python ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyd
+
+.venv/
+venv/
+backend/venv/
+
+# --- Backend uploads / generated content ---
+backend/uploads/
+
+# --- Unity (recommended) ---
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emory[Cc]aptures/
+[Rr]ecordings/
+
+# Unity / IDE generated files
+*.csproj
+*.sln
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.VC.opendb
+.vs/
+**/.vs/
+.vscode/
+.idea/
+
+# --- Local debug artifacts ---
+env-*.log
+gcm-diagnose.log
+*_tree.txt
+tmp_llm_test_docx/

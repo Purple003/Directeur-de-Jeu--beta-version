@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="card">
+    <h2>Players</h2>
+    <div class="table">
+      <div class="row head">
+        <div>ID</div><div>Name</div><div>Age</div><div>School</div><div>XP</div><div>Level</div><div>Sessions</div><div>Accuracy</div>
+      </div>
+      {% for p in players %}
+        <div class="row">
+          <div>{{ p.id }}</div>
+          <div>{{ p.name }}</div>
+          <div>{{ p.age or "-" }}</div>
+          <div>{{ p.school_level or "-" }}</div>
+          <div>{{ p.experience_level or "-" }}</div>
+          <div><span class="pill">{{ p.game_level }}</span></div>
+          <div>{{ p.total_sessions }}</div>
+          <div>{{ (p.accuracy * 100) | round(1) }}%</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
+
