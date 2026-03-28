@@ -11,3 +11,7 @@ j ai encode les images a Base64 voila les deux image test :
 <img width="1443" height="713" alt="Screenshot 2026-03-28 015651" src="https://github.com/user-attachments/assets/ed3225b8-fcc4-45bd-9411-be19700dcf4b" />
 ## ici j ai test par natural calm est bien ? est pas d'image apree je test avec l image :
 <img width="1469" height="666" alt="image" src="https://github.com/user-attachments/assets/82843e50-aea7-49f1-a637-f7bcec1d9c2a" />
+## ici test avec ce image :
+<img width="477" height="462" alt="image" src="https://github.com/user-attachments/assets/b345e31a-caa9-4c2b-b0eb-50ca120df74f" />
+<img width="1478" height="783" alt="image" src="https://github.com/user-attachments/assets/660f0d5c-62ba-4769-a391-953170488231" />
+
