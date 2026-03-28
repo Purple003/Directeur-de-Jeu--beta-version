@@ -22,6 +22,7 @@ from .database import (
     ensure_phase3_compatibility,
     ensure_phase4_compatibility,
     ensure_phase5_compatibility,
+    ensure_phase6_compatibility,
     ensure_schema,
 )
 from .routes.auth import router as auth_router
@@ -157,6 +158,7 @@ def on_startup() -> None:
     ensure_phase3_compatibility()
     ensure_phase4_compatibility()
     ensure_phase5_compatibility()
+    ensure_phase6_compatibility()
 
 
 @app.get("/")

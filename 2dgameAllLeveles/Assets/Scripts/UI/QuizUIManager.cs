@@ -49,8 +49,9 @@ public class QuizUIManager : MonoBehaviour
             return;
         }
 
-        currentIndex = UnityEngine.Random.Range(0, questions.Length);
-        current = questions[currentIndex];
+        // IMPORTANT: no random selection. Backend controls which question comes next.
+        currentIndex = 0;
+        current = questions[0];
         remaining = Mathf.Max(1f, timeLimitSeconds);
         shownAtRealtime = Time.realtimeSinceStartup;
         RenderCurrent();

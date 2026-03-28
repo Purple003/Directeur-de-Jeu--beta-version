@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..langchain_pipeline.pipeline import build_retrieval_context
 from ..models import Course, Question
 from ..services.file_service import extract_text
 from ..services.llm_service import LLMConfigError, LLMServiceError, generate_mcq_questions
@@ -28,22 +25,15 @@ def generate_questions_for_course(
     if not course:
         raise AdaptiveAIServiceError("Course not found.", status_code=404)
 
-    # Build context from file if available; fallback to description.
-    context_text = (course.description or "").strip()
-    if course.file_path:
+    # Stateless pipeline: prefer `content_text` stored in DB (extracted from upload, no file storage).
+    context_text = (getattr(course, "content_text", None) or course.description or "").strip()
+
+    # Legacy fallback for old DB rows that stored a file_path.
+    if not context_text and course.file_path:
         try:
-            base_dir = Path(__file__).resolve().parents[2]
-            abs_path = str((base_dir / course.file_path).resolve())
-            query = f"{course.subject}. {course.description or ''}".strip()
-            lc = build_retrieval_context(file_path=abs_path, query=query)
-            if lc.context_text:
-                context_text = lc.context_text
+            context_text = extract_text(course.file_path)
         except Exception:
-            # fallback to legacy extractors
-            try:
-                context_text = extract_text(course.file_path)
-            except Exception:
-                pass
+            context_text = (course.description or "").strip()
 
     if not context_text:
         raise AdaptiveAIServiceError("Course has no content/description to generate from.", status_code=400)

@@ -1,7 +1,11 @@
 fastapi
 uvicorn[standard]
 sqlalchemy>=2.0
-psycopg2-binary
+# PostgreSQL driver:
+# - psycopg2-binary often lags for newest Python versions
+# - psycopg (v3) supports newer Pythons sooner
+psycopg2-binary; python_version < "3.13"
+psycopg[binary]; python_version >= "3.13"
 python-dotenv
 pydantic>=2.0
 requests
@@ -15,15 +19,15 @@ langchain
 langchain-community
 pymupdf
 numpy
-opencv-python
-mediapipe
-deepface
+
+# Optional emotion stack:
+# Installed separately via requirements-emotion.txt (optional).
 
 # Vector store (FAISS wheels may not be available on native Windows pip; use WSL/Conda if needed)
 faiss-cpu; platform_system != "Windows"
 
 # Auth
-passlib[bcrypt]
+bcrypt
 python-jose[cryptography]
 
 # Migrations

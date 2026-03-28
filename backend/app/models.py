@@ -30,6 +30,8 @@ class Course(Base):
     level = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     file_path = Column(String, nullable=True)
+    # Stateless ingestion: store extracted (or retrieved) text directly, never the uploaded file.
+    content_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     professor = relationship("User", back_populates="courses")

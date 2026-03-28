@@ -1,0 +1,12 @@
+# Optional emotion stack (best effort)
+#
+# NOTE:
+# - DeepFace depends on TensorFlow.
+# - TensorFlow is often NOT available for the newest Python versions on Windows.
+# - If installation fails, run the backend without DeepFace (it will still work).
+#
+# Recommended: use Python 3.11 for this file on Windows.
+
+opencv-python
+mediapipe
+deepface

@@ -14,7 +14,8 @@ public class EmotionCamera : MonoBehaviour
     [Range(10, 95)] public int jpgQuality = 60;
 
     [Header("Send")]
-    public float sendIntervalSeconds = 3f;
+    // Backend enforces throttling too, but keep the client lightweight: send at most once per minute.
+    public float sendIntervalSeconds = 60f;
     public bool logFailures = false;
 
     [NonSerialized] public string lastEmotion = "";
@@ -25,9 +26,7 @@ public class EmotionCamera : MonoBehaviour
     private int questionIdContext = 0;
     private float lastSentAt = -999f;
 
-    [Serializable] class ApiError { public string message; public string details; }
-    [Serializable] class EmotionData { public string emotion; public float confidence; }
-    [Serializable] class ApiEnvelopeEmotion { public bool success; public EmotionData data; public ApiError error; }
+    [Serializable] class EmotionState { public string state; public float confidence; }
 
     void Start()
     {
@@ -101,21 +100,21 @@ public class EmotionCamera : MonoBehaviour
                 yield break;
             }
 
-            ApiEnvelopeEmotion env = null;
-            try { env = JsonUtility.FromJson<ApiEnvelopeEmotion>(req.downloadHandler.text); }
+            EmotionState outp = null;
+            try { outp = JsonUtility.FromJson<EmotionState>(req.downloadHandler.text); }
             catch { }
 
-            if (env != null && env.success && env.data != null)
+            if (outp != null)
             {
-                lastEmotion = env.data.emotion ?? "";
-                lastConfidence = env.data.confidence;
+                // Store the backend-provided gameplay state (calm/engaged/stressed).
+                lastEmotion = outp.state ?? "";
+                lastConfidence = outp.confidence;
             }
             else
             {
                 if (logFailures)
                 {
-                    string msg = (env != null && env.error != null) ? env.error.message : "unknown";
-                    Debug.LogWarning("[API] Emotion analyze error: " + msg);
+                    Debug.LogWarning("[API] Emotion analyze parse error: " + req.downloadHandler.text);
                 }
             }
         }

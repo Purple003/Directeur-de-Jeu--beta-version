@@ -28,12 +28,13 @@ class LangChainIngestionResult:
 
 def build_retrieval_context(
     *,
-    file_path: str,
+    file_path: str | None = None,
+    raw_text: str | None = None,
     query: str,
     max_chars: int = 15000,
     k: int = 6,
 ) -> LangChainIngestionResult:
-    docs = _load_docs(file_path)
+    docs = _load_docs(file_path=file_path, raw_text=raw_text)
     chunks = _split_docs(docs)
     texts = [d.page_content.strip() for d in chunks if getattr(d, "page_content", "").strip()]
     if not texts:
@@ -63,7 +64,15 @@ def build_retrieval_context(
         )
 
 
-def _load_docs(file_path: str):
+def _load_docs(*, file_path: str | None, raw_text: str | None):
+    if raw_text is not None and str(raw_text).strip() != "":
+        from langchain_core.documents import Document as LCDocument
+
+        return [LCDocument(page_content=str(raw_text), metadata={"source": "raw_text"})]
+
+    if not file_path:
+        raise ValueError("build_retrieval_context requires either raw_text or file_path")
+
     path = Path(file_path).resolve()
     ext = path.suffix.lower()
     if ext == ".pdf":

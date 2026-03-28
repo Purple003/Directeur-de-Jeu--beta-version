@@ -20,7 +20,7 @@ class AuthServiceError(Exception):
         self.status_code = int(status_code)
 
 
-_PWD_CONTEXT = None
+_PWD_MARKER_SHA256 = "v2_sha256"
 
 
 def create_user(db: Session, *, username: str, password: str, role: str) -> User:
@@ -33,13 +33,12 @@ def create_user(db: Session, *, username: str, password: str, role: str) -> User
     if not password or len(password) < 6:
         raise AuthServiceError("Password must be at least 6 characters.")
 
-    # For production: bcrypt is required.
-    ctx = _get_pwd_context()
-    if ctx is None:
-        raise AuthServiceError("Hashing dependency missing: install passlib[bcrypt].", status_code=500)
-
-    salt_b64 = ""
-    hash_b64 = _hash_password_bcrypt(password)
+    # Default format: PBKDF2-HMAC-SHA256 (pure stdlib, works on all Pythons / OSes).
+    # This avoids passlib+bcrypt compatibility issues on newer Python versions.
+    try:
+        salt_b64, hash_b64 = _hash_password_pbkdf2(password)
+    except Exception as exc:
+        raise AuthServiceError("Invalid password.", status_code=400) from exc
 
     try:
         user = User(username=username, password_salt=salt_b64, password_hash=hash_b64, role=role)
@@ -73,13 +72,28 @@ def authenticate(db: Session, *, username: str, password: str) -> User:
     if not _verify_password(password, user.password_salt, user.password_hash):
         raise AuthServiceError("Invalid credentials.", status_code=401)
 
+    # Opportunistic migration: if the user is still on legacy bcrypt(prehash) format,
+    # upgrade to PBKDF2 so future logins do not depend on bcrypt/passlib.
+    if (user.password_salt or "") == _PWD_MARKER_SHA256 and (user.password_hash or "").startswith("$2"):
+        try:
+            salt_b64, hash_b64 = _hash_password_pbkdf2(password)
+            user.password_salt = salt_b64
+            user.password_hash = hash_b64
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        except Exception:
+            db.rollback()
+
     return user
 
 
 def create_access_token(*, user: User) -> str:
     secret = _get_jwt_secret()
     algorithm = env("JWT_ALGORITHM", "HS256")
-    expire_minutes = int(env("JWT_EXPIRE_MINUTES", "60") or "60")
+    # Backward-compatible env keys (some setups use ACCESS_TOKEN_EXPIRE_MINUTES).
+    raw_exp = env("JWT_EXPIRE_MINUTES") or env("ACCESS_TOKEN_EXPIRE_MINUTES") or "60"
+    expire_minutes = int(str(raw_exp).strip() or "60")
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user.id),
@@ -99,6 +113,15 @@ def decode_access_token(token: str) -> dict:
     except AuthServiceError:
         raise
     except Exception as exc:
+        # Surface token-expired errors explicitly (helps debugging during long-running flows).
+        try:
+            from jose.exceptions import ExpiredSignatureError  # type: ignore
+
+            if isinstance(exc, ExpiredSignatureError):
+                raise AuthServiceError("Token expired.", status_code=401) from exc
+        except Exception:
+            pass
+
         raise AuthServiceError("Invalid token.", status_code=401) from exc
 
 
@@ -112,13 +135,6 @@ def _get_jwt_secret() -> str:
     return secret
 
 
-def _hash_password_bcrypt(password: str) -> str:
-    ctx = _get_pwd_context()
-    if ctx is None:
-        raise AuthServiceError("passlib[bcrypt] is not installed.")
-    return ctx.hash(password)
-
-
 def _hash_password_pbkdf2(password: str) -> tuple[str, str]:
     salt = secrets.token_bytes(16)
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
@@ -126,15 +142,20 @@ def _hash_password_pbkdf2(password: str) -> tuple[str, str]:
 
 
 def _verify_password(password: str, salt_b64: str, hash_b64: str) -> bool:
-    # New format: bcrypt in password_hash.
-    if (hash_b64 or "").startswith("$2"):
-        ctx = _get_pwd_context()
-        if ctx is None:
-            return False
+    # Legacy format (v2): bcrypt hash of a SHA-256 pre-hash (stored marker in password_salt).
+    # We verify with bcrypt directly to avoid passlib backend issues.
+    if (salt_b64 or "") == _PWD_MARKER_SHA256 and (hash_b64 or "").startswith("$2"):
         try:
-            return bool(ctx.verify(password, hash_b64))
+            import bcrypt  # type: ignore
+
+            secret = _prehash_password(password).encode("utf-8")
+            return bool(bcrypt.checkpw(secret, (hash_b64 or "").encode("utf-8")))
         except Exception:
             return False
+
+    # Other passlib-style hashes (start with "$") are not supported unless migrated.
+    if (hash_b64 or "").startswith("$"):
+        return False
 
     # Legacy format: PBKDF2 with base64 salt + base64 hash.
     try:
@@ -154,18 +175,12 @@ def _b64decode(s: str) -> bytes:
     return base64.b64decode(s.encode("ascii"))
 
 
-def _get_pwd_context():
-    global _PWD_CONTEXT
-    if _PWD_CONTEXT is not None:
-        return _PWD_CONTEXT
-    try:
-        from passlib.context import CryptContext  # type: ignore
-
-        _PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        return _PWD_CONTEXT
-    except Exception:
-        return None
-
+def _prehash_password(password: str) -> str:
+    """
+    Used only to verify the legacy v2 bcrypt format.
+    """
+    digest = hashlib.sha256((password or "").encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii")
 
 def _jwt_encode(payload: dict, *, secret: str, algorithm: str) -> str:
     # Prefer python-jose (requested); fall back to PyJWT if present.

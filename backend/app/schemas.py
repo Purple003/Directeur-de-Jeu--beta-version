@@ -37,6 +37,32 @@ class LLMQuestion(BaseModel):
     correct_answer: str = Field(..., min_length=1)
     difficulty_level: str = Field(..., min_length=1)
 
+    @field_validator("correct_answer")
+    @classmethod
+    def _correct_answer_letter(cls, v: str) -> str:
+        vv = (v or "").strip().upper()
+        if vv not in ("A", "B", "C", "D"):
+            raise ValueError("correct_answer must be one of: A, B, C, D")
+        return vv
+
+    @field_validator("difficulty_level")
+    @classmethod
+    def _difficulty_enum(cls, v: str) -> str:
+        vv = (v or "").strip().lower()
+        if vv not in ("easy", "medium", "hard"):
+            raise ValueError("difficulty_level must be one of: easy, medium, hard")
+        return vv
+
+    @field_validator("choices")
+    @classmethod
+    def _choices_len(cls, v: list[str]) -> list[str]:
+        if not isinstance(v, list) or len(v) != 4:
+            raise ValueError("choices must be a list of exactly 4 strings")
+        out = [str(x) for x in v]
+        if any(not s.strip() for s in out):
+            raise ValueError("choices must not contain empty strings")
+        return out
+
 
 class CourseQuestionsResponseItem(BaseModel):
     id: int
@@ -112,6 +138,7 @@ class GameQuestionItem(BaseModel):
 
 class GameQuestionsResponse(BaseModel):
     course_id: int
+    recommended_difficulty: str | None = None
     questions: list[GameQuestionItem]
 
 
@@ -123,6 +150,18 @@ class StartSessionRequest(BaseModel):
 class StartSessionResponse(BaseModel):
     message: str
     session_id: int
+    recommended_difficulty: str | None = None
+    next_question: GameQuestionItem | None = None
+
+
+class NextQuestionResponse(BaseModel):
+    session_id: int
+    course_id: int
+    player_level: int
+    recommended_difficulty: str
+    question: GameQuestionItem | None = None
+    remaining_in_difficulty: int
+    remaining_total: int
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -191,7 +230,7 @@ class CourseResultsResponse(BaseModel):
 
 
 class EmotionRequest(BaseModel):
-    """JSON body for POST /emotion/analyze (application/json)."""
+    """JSON body for POST /emotion/analyze-detailed (application/json)."""
 
     session_id: str = Field(..., description="Game session id (numeric string, e.g. '42')")
     question_id: str | None = Field(default=None, description="Optional question id (numeric string)")
@@ -214,6 +253,38 @@ class EmotionRequest(BaseModel):
 
 # Backward-compatible alias (same shape: session_id is now string-coerced).
 EmotionAnalyzeRequest = EmotionRequest
+
+
+class EmotionAnalyzeSimpleRequest(BaseModel):
+    """JSON body for POST /emotion/analyze (simple state)."""
+
+    session_id: str = Field(..., description="Game session id (numeric string, e.g. '42')")
+    image_base64: str | None = Field(
+        default=None,
+        description="Optional image as base64 (raw base64 or data URL).",
+    )
+    emotion_hint: str | None = Field(default=None, max_length=64, description="Optional hint if image is missing/unusable")
+    question_id: str | None = Field(default=None, description="Optional question id (numeric string)")
+    store: bool = Field(default=True, description="If true, store result in DB (non-blocking).")
+
+    @field_validator("session_id", mode="before")
+    @classmethod
+    def _coerce_session_id(cls, v: object) -> str:
+        if v is None:
+            raise ValueError("session_id is required")
+        return str(v).strip()
+
+    @field_validator("question_id", mode="before")
+    @classmethod
+    def _coerce_question_id(cls, v: object) -> str | None:
+        if v is None or v == "":
+            return None
+        return str(v).strip()
+
+
+class EmotionStateResponse(BaseModel):
+    state: str = Field(..., description="calm | engaged | stressed")
+    confidence: float = Field(..., ge=0.0, le=1.0)
 
 
 class EmotionAnalyzeResponse(BaseModel):

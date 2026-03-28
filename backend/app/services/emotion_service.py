@@ -36,7 +36,7 @@ def analyze_emotion_detailed(
     *, emotion_hint: str | None = None, image_bytes: bytes | None = None
 ) -> AnalysisResult:
     """
-    Full bridge output for /emotion/analyze (stress, engagement, boredom, scores).
+    Full bridge output for /emotion/analyze-detailed (stress, engagement, boredom, scores).
     Must never raise — returns neutral fusion on hard failures.
     """
     try:

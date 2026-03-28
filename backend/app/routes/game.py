@@ -16,10 +16,16 @@ from ..schemas import (
     SubmitAnswerResponse,
     UpdateProgressRequest,
     UpdateProgressResponse,
+    NextQuestionResponse,
 )
 from ..services.game_service import GameServiceError, end_session, start_session, submit_answer
 from ..services.progression_service import recommend_difficulty
-from ..models import Course, Player, LevelProgress, Question
+from ..services.adaptive_question_service import (
+    AdaptiveQuestionServiceError,
+    decide_next_question,
+    list_next_questions,
+)
+from ..models import Course, GameSession, Player, LevelProgress, Question
 from ..utils.api_response import ok
 
 router = APIRouter(prefix="/game", tags=["Game"])
@@ -29,56 +35,62 @@ logger = logging.getLogger(__name__)
 @router.get("/questions/{course_id}", response_model=ApiResponse[GameQuestionsResponse])
 def get_game_questions(
     course_id: int,
+    session_id: int | None = Query(default=None, ge=1, description="Optional: session id to exclude answered questions"),
     player_id: int | None = Query(default=None, description="Optional: use player progression to pick difficulty"),
     difficulty: str | None = Query(default=None, description="easy|medium|hard"),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    # TEMPORARY: disable all adaptive filtering to make Unity stable.
-    # - No progression-based difficulty selection.
-    # - No difficulty filter.
-    # - No "already answered" filter.
-    # - No limit slice (return ALL questions for the course).
-    #
-    # Only return 404 if the course_id does not exist.
+    """
+    Deterministic question list for Unity:
+    - No randomness.
+    - If `session_id` is provided: excludes already-answered questions and uses adaptive difficulty.
+    - Else: falls back to difficulty/player_id filters for tooling/debug.
+    """
     logger.info(
-        "[API] GetQuestions course_id=%s player_id=%s difficulty=%s limit=%s (filters disabled)",
+        "[API] GetQuestions course_id=%s session_id=%s player_id=%s difficulty=%s limit=%s",
         course_id,
+        session_id,
         player_id,
         difficulty,
         limit,
     )
 
-    try:
-        course = db.query(Course).filter(Course.id == course_id).first()
-        if not course:
-            raise HTTPException(status_code=404, detail="Course not found.")
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
 
-        questions = (
-            db.query(Question)
-            .filter(Question.course_id == course_id)
-            .order_by(Question.id.asc())
-            .all()
-        )
-        logger.info("[API] GetQuestions found=%s (before filtering) course_id=%s", len(questions or []), course_id)
-    except HTTPException:
-        raise
-    except Exception:
-        # Unity stability requirement: never crash this endpoint.
-        logger.exception("[API] GetQuestions ERROR course_id=%s (returning empty list)", course_id)
+    recommended: str | None = None
+    questions: list[Question] = []
+
+    if session_id is not None:
         try:
-            db.rollback()
-        except Exception:
-            pass
-        questions = []
+            recommended, questions = list_next_questions(db, session_id=int(session_id), limit=int(limit))
+        except AdaptiveQuestionServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    if not questions:
-        logger.warning("[API] No questions found for course %s", course_id)
-        questions = []
+        # Safety: ensure the session course matches this course_id (even when no questions remain).
+        s = db.query(GameSession).filter(GameSession.id == int(session_id)).first()
+        if s and int(s.course_id) != int(course_id):
+            raise HTTPException(status_code=400, detail="session_id does not belong to this course.")
+    else:
+        # Debugging path (not used by the adaptive Unity flow).
+        if not difficulty and player_id is not None:
+            player = db.query(Player).filter(Player.id == int(player_id)).first()
+            if player:
+                level = int(getattr(player, "game_level", 1) or 1)
+                recommended = recommend_difficulty(level_number=level, accuracy=0.0, avg_time_ms=None, emotion=None)
+                difficulty = recommended
+
+        q = db.query(Question).filter(Question.course_id == course_id)
+        if difficulty:
+            q = q.filter(Question.difficulty_level.ilike(str(difficulty).strip().lower()))
+        questions = q.order_by(Question.id.asc()).limit(int(limit)).all()
 
     return ok(
         GameQuestionsResponse(
             course_id=course_id,
+            recommended_difficulty=recommended,
             questions=[
                 GameQuestionItem(
                     id=q.id,
@@ -88,8 +100,48 @@ def get_game_questions(
                     correct_answer=q.correct_answer,
                     difficulty_level=q.difficulty_level,
                 )
-                for q in questions
+                for q in (questions or [])
             ],
+        ).model_dump()
+    )
+
+
+@router.get(
+    "/sessions/{session_id}/next-question",
+    response_model=ApiResponse[NextQuestionResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_next_question(session_id: int, db: Session = Depends(get_db)):
+    """
+    Server-controlled adaptive question selection.
+    Unity must call this endpoint for every quiz trigger (no random selection client-side).
+    """
+    try:
+        decision = decide_next_question(db, session_id=int(session_id))
+    except AdaptiveQuestionServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    q = decision.question
+    q_item = None
+    if q is not None:
+        q_item = GameQuestionItem(
+            id=q.id,
+            course_id=q.course_id,
+            question=q.question,
+            choices=q.choices_json,
+            correct_answer=q.correct_answer,
+            difficulty_level=q.difficulty_level,
+        )
+
+    return ok(
+        NextQuestionResponse(
+            session_id=decision.session_id,
+            course_id=decision.course_id,
+            player_level=decision.player_level,
+            recommended_difficulty=decision.recommended_difficulty,
+            question=q_item,
+            remaining_in_difficulty=decision.remaining_in_recommended,
+            remaining_total=decision.remaining_total,
         ).model_dump()
     )
 
@@ -156,7 +208,33 @@ def start_game_session(payload: StartSessionRequest, db: Session = Depends(get_d
         logger.warning("[API] StartSession ERROR player_id=%s course_id=%s msg=%s", payload.player_id, payload.course_id, str(exc))
         raise HTTPException(status_code=exc.status_code, detail=str(exc))
 
-    return ok(StartSessionResponse(message="Session started", session_id=session.id).model_dump())
+    # Best-effort: include initial recommended difficulty + first question so Unity can follow server decisions.
+    recommended: str | None = None
+    next_q: GameQuestionItem | None = None
+    try:
+        decision = decide_next_question(db, session_id=int(session.id))
+        recommended = decision.recommended_difficulty
+        if decision.question is not None:
+            q = decision.question
+            next_q = GameQuestionItem(
+                id=q.id,
+                course_id=q.course_id,
+                question=q.question,
+                choices=q.choices_json,
+                correct_answer=q.correct_answer,
+                difficulty_level=q.difficulty_level,
+            )
+    except Exception:
+        recommended, next_q = None, None
+
+    return ok(
+        StartSessionResponse(
+            message="Session started",
+            session_id=session.id,
+            recommended_difficulty=recommended,
+            next_question=next_q,
+        ).model_dump()
+    )
 
 
 @router.post(

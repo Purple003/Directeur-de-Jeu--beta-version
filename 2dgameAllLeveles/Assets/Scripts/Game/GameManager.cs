@@ -23,9 +23,7 @@ public class GameManager : MonoBehaviour
     public int startingHealth = 3;
 
     private int health;
-    private APIManager.GameQuestion[] cachedQuestions;
     private bool bootstrapped = false;
-    private bool loadingQuestions = false;
     private bool endingSession = false;
     private bool quizOpen = false;
     private bool bootstrapping = false;
@@ -35,13 +33,11 @@ public class GameManager : MonoBehaviour
         PlayerSessionState st = PlayerSessionState.EnsureInstance();
         return bootstrapped
             && !bootstrapping
-            && !loadingQuestions
             && !endingSession
             && !quizOpen
             && st != null
             && st.sessionId > 0
-            && cachedQuestions != null
-            && cachedQuestions.Length > 0;
+            && APIManager.Instance != null;
     }
 
     // Session stats (for ResultScene)
@@ -105,38 +101,10 @@ public class GameManager : MonoBehaviour
             yield break;
         }
 
-        // Load questions
-        yield return EnsureQuestionsLoaded();
-        bootstrapped = (cachedQuestions != null && cachedQuestions.Length > 0);
-        if (!bootstrapped)
-        {
-            Debug.LogError("[Game] Bootstrap completed but no questions were loaded. Quiz triggers will be blocked.");
-        }
+        // Backend controls question selection per quiz trigger.
+        bootstrapped = true;
         UpdateHUD();
         bootstrapping = false;
-    }
-
-    IEnumerator EnsureQuestionsLoaded()
-    {
-        if (loadingQuestions) yield break;
-        if (cachedQuestions != null && cachedQuestions.Length > 0) yield break;
-
-        loadingQuestions = true;
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
-
-        bool ok = false;
-        string err = "";
-        yield return APIManager.Instance.GetQuestions(
-            st.courseId,
-            st.playerId,
-            (qs) => { cachedQuestions = qs; ok = true; },
-            (e) => { ok = false; err = e; }
-        );
-        if (!ok)
-        {
-            Debug.LogError("[Game] GetQuestions failed: " + err);
-        }
-        loadingQuestions = false;
     }
 
     public void TriggerQuiz()
@@ -166,23 +134,45 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        if (cachedQuestions == null || cachedQuestions.Length == 0)
-        {
-            StartCoroutine(TriggerQuizWhenReady());
-            return;
-        }
-
-        quizOpen = true;
-        quizUI.ShowQuiz(cachedQuestions, OnQuizDone);
+        StartCoroutine(OpenNextQuestionQuiz());
     }
 
-    IEnumerator TriggerQuizWhenReady()
+    IEnumerator OpenNextQuestionQuiz()
     {
-        yield return EnsureQuestionsLoaded();
-        if (cachedQuestions != null && cachedQuestions.Length > 0)
+        if (quizOpen) yield break;
+        quizOpen = true;
+
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        if (st == null || st.sessionId <= 0 || APIManager.Instance == null)
         {
-            TriggerQuiz();
+            quizOpen = false;
+            yield break;
         }
+
+        bool ok = false;
+        string err = "";
+        APIManager.GameQuestion q = null;
+
+        yield return APIManager.Instance.GetNextQuestion(
+            st.sessionId,
+            (qq) => { q = qq; ok = true; },
+            (e) => { ok = false; err = e; }
+        );
+
+        if (!ok || q == null || q.id <= 0)
+        {
+            quizOpen = false;
+            Debug.LogWarning("[Game] GetNextQuestion failed: " + err);
+            // If no more questions, end the run gracefully.
+            if (!string.IsNullOrEmpty(err) && err.ToLower().Contains("no more questions"))
+            {
+                EndRunToResults();
+            }
+            yield break;
+        }
+
+        // Show exactly one backend-chosen question (no randomness client-side).
+        quizUI.ShowQuiz(new APIManager.GameQuestion[] { q }, OnQuizDone);
     }
 
     void OnQuizDone(bool isCorrect)

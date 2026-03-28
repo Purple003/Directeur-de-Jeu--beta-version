@@ -63,23 +63,43 @@ def generate_mcq_questions(
         "Authorization": f"Bearer {llm_api_key}",
     }
 
-    payload: dict[str, Any] = {
-        "model": llm_model,
-        "temperature": 0.3,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": _build_user_prompt(
-                    subject=subject,
-                    level=level,
-                    description=description,
-                    extracted_text=extracted_text,
-                ),
-            },
-        ],
-    }
+    user_prompt = _build_user_prompt(
+        subject=subject,
+        level=level,
+        description=description,
+        extracted_text=extracted_text,
+    )
 
+    last_error: str | None = None
+    for attempt in range(2):
+        payload: dict[str, Any] = {
+            "model": llm_model,
+            "temperature": 0.0 if attempt > 0 else 0.2,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt if attempt == 0 else _build_repair_prompt(user_prompt, last_error)},
+            ],
+        }
+
+        content = _call_llm(llm_url=llm_url, headers=headers, payload=payload)
+
+        try:
+            parsed_json = _parse_json_content_strict(content)
+            questions_payload = parsed_json.get("questions")
+            if not isinstance(questions_payload, list) or len(questions_payload) != 5:
+                raise LLMServiceError("LLM must return exactly 5 questions in `questions`.")
+
+            return [LLMQuestion.model_validate(item) for item in questions_payload]
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt >= 1:
+                raise LLMServiceError(f"LLM output invalid JSON/schema: {last_error}") from exc
+            continue
+
+    raise LLMServiceError("LLM output invalid JSON/schema.")
+
+
+def _call_llm(*, llm_url: str, headers: dict[str, str], payload: dict[str, Any]) -> str:
     try:
         response = requests.post(llm_url, headers=headers, json=payload, timeout=90)
     except requests.RequestException as exc:
@@ -90,19 +110,9 @@ def generate_mcq_questions(
 
     try:
         response_json = response.json()
-        content = response_json["choices"][0]["message"]["content"]
+        return response_json["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise LLMServiceError("Unexpected LLM response format.") from exc
-
-    parsed_json = _parse_json_content(content)
-    questions_payload = parsed_json.get("questions")
-    if not isinstance(questions_payload, list) or len(questions_payload) != 5:
-        raise LLMServiceError("LLM must return exactly 5 questions.")
-
-    try:
-        return [LLMQuestion.model_validate(item) for item in questions_payload]
-    except Exception as exc:
-        raise LLMServiceError("LLM output failed schema validation.") from exc
 
 
 def _load_env_once() -> None:
@@ -181,6 +191,7 @@ Rules:
   For this course, set difficulty_level="{suggested}" for all questions.
 
 Return ONLY valid JSON with this shape:
+No markdown. No code fences. No extra text.
 {{
   "questions": [
     {{
@@ -206,31 +217,40 @@ def _suggest_difficulty(level: str) -> str:
     return "medium"
 
 
-def _parse_json_content(content: str) -> dict[str, Any]:
-    cleaned = content.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.removeprefix("```json").removeprefix("```")
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        cleaned = cleaned.strip()
+def _parse_json_content_strict(content: str) -> dict[str, Any]:
+    """
+    STRICT mode:
+    - The model must return ONLY a JSON object (no code fences, no extra text).
+    - Any deviation is treated as an error (and triggers at most one retry).
+    """
+    cleaned = (content or "").strip()
+    if not cleaned:
+        raise LLMServiceError("LLM returned empty content.")
+    if "```" in cleaned:
+        raise LLMServiceError("LLM returned code fences; strict JSON required.")
+    if not (cleaned.startswith("{") and cleaned.endswith("}")):
+        raise LLMServiceError("LLM returned non-JSON content; strict JSON required.")
 
     try:
         parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        # Tolerate extra text by extracting the first JSON object.
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise LLMServiceError("LLM returned non-JSON content.")
-        try:
-            parsed = json.loads(cleaned[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise LLMServiceError("LLM returned non-JSON content.") from exc
+    except json.JSONDecodeError as exc:
+        raise LLMServiceError("LLM returned invalid JSON.") from exc
 
     if not isinstance(parsed, dict):
         raise LLMServiceError("LLM JSON root must be an object.")
 
     return parsed
+
+
+def _build_repair_prompt(original_prompt: str, error: str | None) -> str:
+    # Intentionally do NOT include the previous model output to avoid prompt bloat/leaks.
+    err = (error or "").strip()
+    return (
+        original_prompt
+        + "\n\nYour previous response was INVALID.\n"
+        + (f"Reason: {err}\n" if err else "")
+        + "Return ONLY a single JSON object. No markdown. No backticks. No extra keys.\n"
+    )
 
 
 def _format_http_error(response: requests.Response) -> str:

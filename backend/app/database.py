@@ -12,11 +12,39 @@ load_env_once()
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://adaptive_user:1234@localhost:5432/adaptive_game_db"
 )
+DATABASE_URL = (DATABASE_URL or "").strip()
+
+
+def _select_postgres_driver(url: str) -> str:
+    """
+    Prefer psycopg2 when available, otherwise fall back to psycopg (v3).
+
+    This makes the project installable on newer Python versions where psycopg2 wheels
+    may not exist yet.
+    """
+    u = (url or "").strip()
+    if not u.startswith("postgresql://"):
+        return u
+
+    try:
+        import psycopg2  # noqa: F401
+
+        return u  # default SQLAlchemy driver (psycopg2) works with postgresql://
+    except Exception:
+        pass
+
+    try:
+        import psycopg  # noqa: F401
+
+        # SQLAlchemy psycopg (v3) dialect uses: postgresql+psycopg://
+        return "postgresql+psycopg://" + u.removeprefix("postgresql://")
+    except Exception:
+        return u
 
 # Use a dedicated schema to avoid public-schema privilege issues.
 DB_SCHEMA = os.getenv("DB_SCHEMA", "adaptive")
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(_select_postgres_driver(DATABASE_URL))
 if engine.url.drivername.startswith("sqlite"):
     raise RuntimeError("SQLite is not supported for this project. Set DATABASE_URL to a PostgreSQL URL.")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -144,6 +172,26 @@ def ensure_phase5_compatibility() -> None:
     with engine.begin() as connection:
         for stmt in stmts:
             connection.execute(text(stmt))
+
+
+def ensure_phase6_compatibility() -> None:
+    """
+    Stateless course ingestion:
+    - Adds `content_text` to `courses` if missing.
+
+    New uploads must NOT be stored on disk (no backend/uploads persistence).
+    """
+    inspector = inspect(engine)
+    try:
+        cols = {col["name"] for col in inspector.get_columns("courses", schema=DB_SCHEMA)}
+    except Exception:
+        return
+
+    if "content_text" in cols:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text(f"ALTER TABLE {DB_SCHEMA}.courses ADD COLUMN content_text TEXT"))
 
 
 def ensure_phase2_compatibility() -> None:

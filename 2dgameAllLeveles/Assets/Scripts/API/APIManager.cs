@@ -283,6 +283,63 @@ public class APIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Server-controlled adaptive selection of the next question for a session.
+    /// IMPORTANT: Unity must not pick questions randomly.
+    /// </summary>
+    public IEnumerator GetNextQuestion(int sessionId, Action<GameQuestion> onOk, Action<string> onErr)
+    {
+        if (sessionId <= 0)
+        {
+            onErr?.Invoke("GetNextQuestion blocked: session_id is missing (<= 0).");
+            yield break;
+        }
+
+        string url = $"{baseURL}/game/sessions/{sessionId}/next-question";
+        using (UnityWebRequest req = UnityWebRequest.Get(url))
+        {
+            SetAuth(req);
+            if (debugLogging) Debug.Log($"[API] GetNextQuestion sessionId={sessionId} url={url}");
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                ApiEnvelopeNextQuestion env = null;
+                try { env = JsonUtility.FromJson<ApiEnvelopeNextQuestion>(req.downloadHandler.text); }
+                catch { env = null; }
+
+                if (env != null && env.success && env.data != null)
+                {
+                    // Update session state with the backend decision (difficulty/level).
+                    PlayerSessionState st = PlayerSessionState.EnsureInstance();
+                    if (st != null)
+                    {
+                        st.gameLevel = Mathf.Max(1, env.data.player_level);
+                        st.lastRecommendedDifficulty = env.data.recommended_difficulty ?? "";
+                    }
+
+                    if (env.data.question != null && env.data.question.id > 0)
+                    {
+                        onOk?.Invoke(env.data.question);
+                    }
+                    else
+                    {
+                        onErr?.Invoke("No more questions available for this session.");
+                    }
+                }
+                else
+                {
+                    onErr?.Invoke((env != null && env.error != null) ? env.error.message : "GetNextQuestion failed.");
+                }
+            }
+            else
+            {
+                string body = req.downloadHandler != null ? req.downloadHandler.text : "";
+                onErr?.Invoke($"HTTP {req.responseCode}: {ExtractErrorMessage(body)}");
+            }
+        }
+    }
+
     public IEnumerator SubmitAnswer(SubmitAnswerRequest payload, Action<bool> onOk, Action<string> onErr)
     {
         string url = baseURL + "/game/submit-answer";
@@ -541,6 +598,18 @@ public class APIManager : MonoBehaviour
         public string correct_answer;
         public string difficulty_level;
     }
+
+    [Serializable] public class NextQuestionData
+    {
+        public int session_id;
+        public int course_id;
+        public int player_level;
+        public string recommended_difficulty;
+        public GameQuestion question;
+        public int remaining_in_difficulty;
+        public int remaining_total;
+    }
+    [Serializable] public class ApiEnvelopeNextQuestion { public bool success; public NextQuestionData data; public ApiError error; }
 
     [Serializable] public class SubmitAnswerRequest
     {

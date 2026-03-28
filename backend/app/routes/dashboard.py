@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func
@@ -233,7 +233,12 @@ def dashboard_course_results(course_id: int, db: Session = Depends(get_db), _use
 
 
 @router.get("/api/course/{course_id}/emotion-summary")
-def dashboard_emotion_summary(course_id: int, db: Session = Depends(get_db), _user=ProfessorOnly):
+def dashboard_emotion_summary(
+    course_id: int,
+    session_id: int | None = Query(default=None, ge=1, description="Optional: include latest emotion for this session"),
+    db: Session = Depends(get_db),
+    _user=ProfessorOnly,
+):
     course = _get_owned_course(db, course_id=course_id, professor_id=int(_user.id))
     if not course:
         raise HTTPException(status_code=404, detail="Course not found.")
@@ -245,7 +250,45 @@ def dashboard_emotion_summary(course_id: int, db: Session = Depends(get_db), _us
         .group_by(EmotionEvent.emotion)
         .all()
     )
-    return ok({"course_id": course_id, "counts": {emotion: int(count) for emotion, count in rows}})
+
+    payload: dict = {"course_id": course_id, "counts": {emotion: int(count) for emotion, count in rows}}
+
+    latest = (
+        db.query(EmotionEvent)
+        .filter(EmotionEvent.session_id.in_(sessions))
+        .order_by(EmotionEvent.created_at.desc(), EmotionEvent.id.desc())
+        .first()
+    )
+    if latest:
+        payload["latest"] = {
+            "session_id": int(latest.session_id),
+            "emotion": str(latest.emotion),
+            "confidence": float(latest.confidence),
+            "created_at": latest.created_at.isoformat() if latest.created_at else None,
+        }
+
+    if session_id is not None:
+        s = db.query(GameSession).filter(GameSession.id == int(session_id)).first()
+        if s and int(s.course_id) == int(course_id):
+            ev = (
+                db.query(EmotionEvent)
+                .filter(EmotionEvent.session_id == int(session_id))
+                .order_by(EmotionEvent.created_at.desc(), EmotionEvent.id.desc())
+                .first()
+            )
+            if ev:
+                payload["latest_for_session"] = {
+                    "session_id": int(ev.session_id),
+                    "emotion": str(ev.emotion),
+                    "confidence": float(ev.confidence),
+                    "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                }
+            else:
+                payload["latest_for_session"] = None
+        else:
+            payload["latest_for_session"] = None
+
+    return ok(payload)
 
 
 @router.get("/api/course/{course_id}/question-stats")

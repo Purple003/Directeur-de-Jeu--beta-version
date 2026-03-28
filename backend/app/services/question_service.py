@@ -31,6 +31,7 @@ def create_course_and_questions(
     level: str,
     description: str | None,
     file_path: str | None,
+    content_text: str | None,
     questions: list[LLMQuestion],
 ) -> Course:
     try:
@@ -40,6 +41,7 @@ def create_course_and_questions(
             level=level.strip(),
             description=description.strip() if description else None,
             file_path=file_path,
+            content_text=content_text.strip() if content_text else None,
         )
         db.add(course)
         db.flush()

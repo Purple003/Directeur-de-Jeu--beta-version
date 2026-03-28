@@ -26,13 +26,9 @@ class DeepFaceEmotionRunner:
         self,
         *,
         min_interval_s: float | None = None,
-        timeout_s: float | None = None,
     ) -> None:
         self._min_interval_s = float(
             min_interval_s if min_interval_s is not None else os.getenv("EMOTION_MIN_INTERVAL_S", "1.5") or "1.5"
-        )
-        self._timeout_s = float(
-            timeout_s if timeout_s is not None else os.getenv("EMOTION_DEEPFACE_TIMEOUT_S", "3.0") or "3.0"
         )
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._in_flight = None
@@ -91,73 +87,79 @@ class DeepFaceEmotionRunner:
 
     def analyze(self, img_bgr: np.ndarray) -> DeepFaceSnapshot | None:
         """
-        Returns fresh DeepFace output when allowed; None if decode/model missing;
-        cached snapshot with is_fresh=False when throttled or busy.
+        Non-blocking DeepFace integration:
+        - Schedules DeepFace work in a background thread.
+        - Returns the latest cached snapshot (is_fresh=False) immediately.
+
+        This keeps FastAPI endpoints responsive even when DeepFace is slow.
         """
         df = self._get_deepface()
         if df is None:
             return None
 
         now = time.monotonic()
+
+        # Throttle: do not schedule new work too often.
         if self._cache is not None and self._min_interval_s > 0 and (now - self._last_at) < self._min_interval_s:
             return DeepFaceSnapshot(
                 dominant=self._cache.dominant,
                 confidence=self._cache.confidence,
                 scores=dict(self._cache.scores),
                 is_fresh=False,
+                error="throttled",
             )
 
+        # Drop completed handle (cache update happens in callback).
         if self._in_flight is not None and self._in_flight.done():
             self._in_flight = None
+
+        # If a job is running, return cache immediately.
         if self._in_flight is not None and not self._in_flight.done():
-            logger.debug("[DeepFace] busy — using cache")
             if self._cache is not None:
                 return DeepFaceSnapshot(
                     dominant=self._cache.dominant,
                     confidence=self._cache.confidence,
                     scores=dict(self._cache.scores),
                     is_fresh=False,
+                    error="busy",
                 )
-            return DeepFaceSnapshot(
-                dominant="neutral",
-                confidence=0.5,
-                scores={k: 0.0 for k in _SCORE_KEYS},
-                is_fresh=False,
-                error="busy",
-            )
+            return None
 
+        # Schedule new work and return cache immediately.
         def _run():
             return df.analyze(img_bgr, actions=["emotion"], enforce_detection=False)
 
-        self._in_flight = self._executor.submit(_run)
+        fut = self._executor.submit(_run)
+        self._in_flight = fut
+        fut.add_done_callback(self._on_done)
+
+        if self._cache is not None:
+            return DeepFaceSnapshot(
+                dominant=self._cache.dominant,
+                confidence=self._cache.confidence,
+                scores=dict(self._cache.scores),
+                is_fresh=False,
+                error="scheduled",
+            )
+        return None
+
+    def _on_done(self, fut: concurrent.futures.Future) -> None:
         try:
-            raw = self._in_flight.result(timeout=max(0.1, self._timeout_s))
-        except concurrent.futures.TimeoutError:
-            logger.warning("[DeepFace] timeout %.1fs", self._timeout_s)
-            self._in_flight = None
-            if self._cache is not None:
-                return DeepFaceSnapshot(
-                    dominant=self._cache.dominant,
-                    confidence=self._cache.confidence,
-                    scores=dict(self._cache.scores),
-                    is_fresh=False,
-                    error="timeout",
-                )
-            return None
-        finally:
-            if self._in_flight is not None and self._in_flight.done():
-                self._in_flight = None
+            raw = fut.result(timeout=0)
+        except Exception as exc:
+            logger.debug("[DeepFace] background job failed: %s", exc)
+            return
 
         try:
             snap = self._parse_result(raw)
         except Exception as exc:
-            logger.warning("[DeepFace] parse failed: %s", exc)
-            return None
+            logger.debug("[DeepFace] background parse failed: %s", exc)
+            return
+
         if snap is None:
-            return None
+            return
         self._cache = snap
         self._last_at = time.monotonic()
-        return snap
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
