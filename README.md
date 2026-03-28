@@ -16,3 +16,8 @@ j ai encode les images a Base64 voila les deux image test :
 <img width="1478" height="783" alt="image" src="https://github.com/user-attachments/assets/660f0d5c-62ba-4769-a391-953170488231" />
 
 <img width="1919" height="618" alt="image" src="https://github.com/user-attachments/assets/c06df461-f4e3-47d0-98cf-74f0e7f2a148" />
+## call the last emotion : car il ca fais ca selement 60 s pour analyse l etat emtionelle de player. 
+<img width="1089" height="854" alt="image" src="https://github.com/user-attachments/assets/930455b3-c455-4e57-bb90-8dcb8b8a5253" />
+
+backend/scripts/store_and_fetch_latest_emotion.py
+backend/app/routes/dashboard.py (ajout latest + latest_for_session dans /emotion-summary)
