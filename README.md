@@ -21,3 +21,6 @@ j ai encode les images a Base64 voila les deux image test :
 
 backend/scripts/store_and_fetch_latest_emotion.py
 backend/app/routes/dashboard.py (ajout latest + latest_for_session dans /emotion-summary)
+
+## aprea chaque 61 s :
+<img width="855" height="510" alt="image" src="https://github.com/user-attachments/assets/6b27e7ba-5d9e-40e2-a0bb-f2a5d41a74e2" />
