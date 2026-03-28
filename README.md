@@ -15,3 +15,4 @@ j ai encode les images a Base64 voila les deux image test :
 <img width="477" height="462" alt="image" src="https://github.com/user-attachments/assets/b345e31a-caa9-4c2b-b0eb-50ca120df74f" />
 <img width="1478" height="783" alt="image" src="https://github.com/user-attachments/assets/660f0d5c-62ba-4769-a391-953170488231" />
 
+<img width="1919" height="618" alt="image" src="https://github.com/user-attachments/assets/c06df461-f4e3-47d0-98cf-74f0e7f2a148" />
