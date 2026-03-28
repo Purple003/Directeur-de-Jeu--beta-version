@@ -24,3 +24,6 @@ backend/app/routes/dashboard.py (ajout latest + latest_for_session dans /emotion
 
 ## aprea chaque 61 s :
 <img width="855" height="510" alt="image" src="https://github.com/user-attachments/assets/6b27e7ba-5d9e-40e2-a0bb-f2a5d41a74e2" />
+
+<img width="1015" height="644" alt="image" src="https://github.com/user-attachments/assets/779f62dc-5c16-4911-8871-2b64c08b6bdc" />
+
