@@ -99,6 +99,71 @@ def generate_mcq_questions(
     raise LLMServiceError("LLM output invalid JSON/schema.")
 
 
+def generate_wizard_dialogue(
+    *,
+    subject: str,
+    level: str,
+    description: str | None,
+    extracted_text: str,
+    simplify: bool = False,
+) -> str:
+    """
+    Generates a short wizard-style explanation for a course, suitable for in-game dialogue.
+
+    Behavior:
+    - If LLM_API_KEY is missing, returns a deterministic fallback text (keeps the demo playable offline).
+    - Otherwise uses the same OpenAI-compatible chat completion endpoint as question generation.
+    """
+    _load_env_once()
+    llm_url, llm_model, llm_api_key = _get_llm_config()
+
+    safe_subject = (subject or "").strip() or "the topic"
+    safe_level = (level or "").strip() or "medium"
+    safe_description = (description or "").strip()
+    context = (extracted_text or "").strip()
+
+    if not llm_api_key:
+        return _fallback_wizard_dialogue(
+            subject=safe_subject,
+            level=safe_level,
+            description=safe_description,
+            simplify=bool(simplify),
+        )
+
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {llm_api_key}",
+    }
+
+    user_prompt = _build_dialogue_prompt(
+        subject=safe_subject,
+        level=safe_level,
+        description=safe_description,
+        extracted_text=context,
+        simplify=bool(simplify),
+    )
+
+    payload: dict[str, Any] = {
+        "model": llm_model,
+        "temperature": 0.3 if not simplify else 0.2,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+
+    content = _call_llm(llm_url=llm_url, headers=headers, payload=payload)
+    out = (content or "").strip()
+    if not out:
+        return _fallback_wizard_dialogue(
+            subject=safe_subject,
+            level=safe_level,
+            description=safe_description,
+            simplify=bool(simplify),
+        )
+    return out
+
+
 def _call_llm(*, llm_url: str, headers: dict[str, str], payload: dict[str, Any]) -> str:
     try:
         response = requests.post(llm_url, headers=headers, json=payload, timeout=90)
@@ -202,6 +267,54 @@ No markdown. No code fences. No extra text.
     }}
   ]
 }}"""
+
+
+def _build_dialogue_prompt(
+    *,
+    subject: str,
+    level: str,
+    description: str,
+    extracted_text: str,
+    simplify: bool,
+) -> str:
+    limited_text = (extracted_text or "").strip()[:8000]
+    style = "very simple" if simplify else "clear and motivating"
+
+    # Keep the output human-readable (Unity will display it directly).
+    return f"""You are an in-game wizard NPC guiding a student in a 2D platformer serious game.
+You must explain the lesson for subject "{subject}" (level "{level}") in a {style} way.
+
+Course description:
+{description}
+
+Course context (may be partial):
+{limited_text}
+
+Rules:
+- Write between 4 and 8 short sentences total.
+- No markdown, no JSON, no code fences.
+- Use simple vocabulary. If simplify=true, use very short sentences and avoid jargon.
+- End with ONE short sentence prompting the player to start the quiz enemies.
+"""
+
+
+def _fallback_wizard_dialogue(*, subject: str, level: str, description: str, simplify: bool) -> str:
+    if simplify:
+        base = f"Hello! Today we learn {subject}."
+        if description:
+            d = description.strip()
+            if len(d) > 140:
+                d = d[:140].rstrip() + "..."
+            base += f" {d}"
+        return base + " When you are ready, start the quiz enemies!"
+
+    base = f"Greetings, adventurer! Today we explore {subject} (level: {level})."
+    if description:
+        d = description.strip()
+        if len(d) > 220:
+            d = d[:220].rstrip() + "..."
+        base += f" {d}"
+    return base + " If you understood, let us begin the quiz enemies!"
 
 
 def _suggest_difficulty(level: str) -> str:

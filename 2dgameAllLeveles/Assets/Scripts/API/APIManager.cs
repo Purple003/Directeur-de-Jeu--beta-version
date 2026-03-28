@@ -542,10 +542,110 @@ public class APIManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Calls POST /emotion/analyze (simple state endpoint).
+    /// Response is NOT enveloped: { "state": "...", "confidence": 0..1 }.
+    /// </summary>
+    public IEnumerator PostEmotionHint(int sessionId, string emotionHint, bool store, Action<string, float> onOk, Action<string> onErr)
+    {
+        if (sessionId <= 0)
+        {
+            onErr?.Invoke("PostEmotionHint blocked: sessionId is missing (<= 0).");
+            yield break;
+        }
+
+        string url = baseURL + "/emotion/analyze";
+        string hint = string.IsNullOrWhiteSpace(emotionHint) ? "neutral" : emotionHint.Trim();
+        string json = "{\"session_id\":\"" + sessionId + "\",\"emotion_hint\":\"" + Escape(hint) + "\",\"store\":" + (store ? "true" : "false") + "}";
+
+        using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
+        {
+            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            SetAuth(req);
+            if (debugLogging) Debug.Log($"[API] EmotionAnalyze(sessionId={sessionId}, hint={hint}, store={store})");
+            yield return req.SendWebRequest();
+
+            string body = req.downloadHandler != null ? (req.downloadHandler.text ?? "") : "";
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                onErr?.Invoke($"HTTP {req.responseCode}: {ExtractErrorMessage(body)}");
+                yield break;
+            }
+
+            EmotionStateResponse outp = null;
+            try { outp = JsonUtility.FromJson<EmotionStateResponse>(body); } catch { outp = null; }
+            if (outp == null || string.IsNullOrEmpty(outp.state))
+            {
+                onErr?.Invoke("EmotionAnalyze parse failed: " + (body.Length > 300 ? body.Substring(0, 300) + "..." : body));
+                yield break;
+            }
+
+            onOk?.Invoke(outp.state, outp.confidence);
+        }
+    }
+
+    public IEnumerator GenerateDialogue(int sessionId, int courseId, bool simplify, Action<string> onOk, Action<string> onErr)
+    {
+        if (sessionId <= 0)
+        {
+            onErr?.Invoke("GenerateDialogue blocked: sessionId is missing (<= 0).");
+            yield break;
+        }
+        if (courseId <= 0)
+        {
+            onErr?.Invoke("GenerateDialogue blocked: courseId is missing (<= 0).");
+            yield break;
+        }
+
+        string url = baseURL + "/game/generate-dialogue";
+        GenerateDialogueRequest payload = new GenerateDialogueRequest
+        {
+            session_id = sessionId,
+            course_id = courseId,
+            simplify = simplify
+        };
+        string json = JsonUtility.ToJson(payload);
+
+        using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
+        {
+            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            SetAuth(req);
+            if (debugLogging) Debug.Log($"[API] GenerateDialogue sessionId={sessionId} courseId={courseId} simplify={simplify} url={url} payload={json}");
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                ApiEnvelopeGenerateDialogue env = null;
+                try { env = JsonUtility.FromJson<ApiEnvelopeGenerateDialogue>(req.downloadHandler.text); }
+                catch { env = null; }
+
+                if (env != null && env.success && env.data != null && !string.IsNullOrWhiteSpace(env.data.dialogue_text))
+                {
+                    onOk?.Invoke(env.data.dialogue_text);
+                }
+                else
+                {
+                    onErr?.Invoke((env != null && env.error != null) ? env.error.message : "GenerateDialogue failed.");
+                }
+            }
+            else
+            {
+                string body = req.downloadHandler != null ? req.downloadHandler.text : "";
+                onErr?.Invoke($"HTTP {req.responseCode}: {ExtractErrorMessage(body)}");
+            }
+        }
+    }
+
     // ---------- API Models (JsonUtility-friendly) ----------
 
     [Serializable] public class ApiError { public string message; public string details; }
     [Serializable] public class ApiEnvelopeAny { public bool success; public ApiError error; }
+
+    [Serializable] public class EmotionStateResponse { public string state; public float confidence; }
 
     [Serializable] public class LoginRequest { public string username; public string password; }
     [Serializable] public class LoginData { public string access_token; public string token_type; public string role; }
@@ -633,6 +733,10 @@ public class APIManager : MonoBehaviour
         public string recommended_difficulty;
     }
     [Serializable] public class ApiEnvelopeEndSession { public bool success; public EndSessionData data; public ApiError error; }
+
+    [Serializable] public class GenerateDialogueRequest { public int session_id; public int course_id; public bool simplify; }
+    [Serializable] public class GenerateDialogueData { public int session_id; public int course_id; public bool simplified; public string dialogue_text; }
+    [Serializable] public class ApiEnvelopeGenerateDialogue { public bool success; public GenerateDialogueData data; public ApiError error; }
 
     [Serializable] public class UpdateProgressData
     {

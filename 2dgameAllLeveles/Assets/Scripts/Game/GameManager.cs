@@ -21,12 +21,25 @@ public class GameManager : MonoBehaviour
 
     [Header("Gameplay")]
     public int startingHealth = 3;
+    public EnemyManager enemyManager;
+
+    [Header("Game Over")]
+    public bool pauseOnGameOver = true;
+    public float gameOverDelaySeconds = 1.25f;
 
     private int health;
     private bool bootstrapped = false;
     private bool endingSession = false;
     private bool quizOpen = false;
     private bool bootstrapping = false;
+    private GameObject pendingEnemy = null;
+    private Action onEnemyQuizClosed = null;
+    private bool gameOverSequenceStarted = false;
+
+    public int CurrentHealth => health;
+
+    public event Action<int> OnHealthChanged;
+    public event Action OnGameOver;
 
     public bool IsReadyForQuiz()
     {
@@ -49,7 +62,9 @@ public class GameManager : MonoBehaviour
     void Start()
     {
         health = Mathf.Max(1, startingHealth);
+        if (enemyManager == null) enemyManager = FindObjectOfType<EnemyManager>();
         UpdateHUD();
+        OnHealthChanged?.Invoke(health);
         StartCoroutine(BootstrapSession());
     }
 
@@ -137,6 +152,19 @@ public class GameManager : MonoBehaviour
         StartCoroutine(OpenNextQuestionQuiz());
     }
 
+    public void TriggerQuizForEnemy(GameObject enemy, Action onClosed)
+    {
+        if (enemy == null)
+        {
+            TriggerQuiz();
+            onClosed?.Invoke();
+            return;
+        }
+        pendingEnemy = enemy;
+        onEnemyQuizClosed = onClosed;
+        TriggerQuiz();
+    }
+
     IEnumerator OpenNextQuestionQuiz()
     {
         if (quizOpen) yield break;
@@ -184,11 +212,22 @@ public class GameManager : MonoBehaviour
             correctCount++;
             AddXP(50);
             StartCoroutine(PushProgressDelta(xpDelta: 50, starsDelta: 0));
+
+            if (pendingEnemy != null)
+            {
+                if (enemyManager == null) enemyManager = FindObjectOfType<EnemyManager>();
+                if (enemyManager != null) enemyManager.DestroyEnemy(pendingEnemy);
+                else Destroy(pendingEnemy);
+            }
         }
         else
         {
             TakeDamage(1);
         }
+
+        pendingEnemy = null;
+        onEnemyQuizClosed?.Invoke();
+        onEnemyQuizClosed = null;
 
         UpdateHUD();
     }
@@ -206,11 +245,28 @@ public class GameManager : MonoBehaviour
     public void TakeDamage(int amount)
     {
         health = Mathf.Max(0, health - Mathf.Max(0, amount));
+        OnHealthChanged?.Invoke(health);
         if (health <= 0)
         {
-            EndRunToResults();
+            if (!gameOverSequenceStarted) StartCoroutine(GameOverSequence());
         }
         UpdateHUD();
+    }
+
+    IEnumerator GameOverSequence()
+    {
+        if (gameOverSequenceStarted) yield break;
+        gameOverSequenceStarted = true;
+
+        OnGameOver?.Invoke();
+
+        if (pauseOnGameOver) Time.timeScale = 0f;
+
+        float d = Mathf.Max(0f, gameOverDelaySeconds);
+        if (d > 0f) yield return new WaitForSecondsRealtime(d);
+
+        if (pauseOnGameOver) Time.timeScale = 1f;
+        EndRunToResults();
     }
 
     IEnumerator PushProgressDelta(int xpDelta, int starsDelta)

@@ -164,6 +164,19 @@ class NextQuestionResponse(BaseModel):
     remaining_total: int
 
 
+class GenerateDialogueRequest(BaseModel):
+    session_id: int = Field(..., ge=1, description="Session id (positive integer)")
+    course_id: int = Field(..., ge=1, description="Course id (positive integer)")
+    simplify: bool = Field(default=False, description="If true, generate a simpler explanation")
+
+
+class GenerateDialogueResponse(BaseModel):
+    session_id: int
+    course_id: int
+    simplified: bool
+    dialogue_text: str
+
+
 class SubmitAnswerRequest(BaseModel):
     session_id: int = Field(..., ge=1, description="Session id (positive integer)")
     question_id: int = Field(..., ge=1, description="Question id (positive integer)")

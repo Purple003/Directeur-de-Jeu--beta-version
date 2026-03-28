@@ -7,6 +7,8 @@ from ..schemas import (
     ApiResponse,
     EndSessionRequest,
     EndSessionResponse,
+    GenerateDialogueRequest,
+    GenerateDialogueResponse,
     GameQuestionsResponse,
     GameQuestionItem,
     ProgressionState,
@@ -26,10 +28,62 @@ from ..services.adaptive_question_service import (
     list_next_questions,
 )
 from ..models import Course, GameSession, Player, LevelProgress, Question
+from ..services.llm_service import LLMConfigError, LLMServiceError, generate_wizard_dialogue
 from ..utils.api_response import ok
 
 router = APIRouter(prefix="/game", tags=["Game"])
 logger = logging.getLogger(__name__)
+
+
+@router.post(
+    "/generate-dialogue",
+    response_model=ApiResponse[GenerateDialogueResponse],
+    status_code=status.HTTP_200_OK,
+)
+def generate_dialogue(payload: GenerateDialogueRequest, db: Session = Depends(get_db)):
+    """
+    Generates a short, course-specific explanation for the wizard NPC.
+
+    This endpoint is designed for Unity dialogue UI:
+    - `repeat` can call again for a fresh phrasing.
+    - `simplify` sets payload.simplify=true for simpler output.
+    """
+    course = db.query(Course).filter(Course.id == int(payload.course_id)).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+    session = db.query(GameSession).filter(GameSession.id == int(payload.session_id)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if int(session.course_id) != int(payload.course_id):
+        raise HTTPException(status_code=400, detail="session_id does not belong to this course.")
+
+    context_text = (getattr(course, "content_text", None) or course.description or "").strip()
+    if not context_text:
+        context_text = f"{(course.subject or '').strip()}\n{(course.description or '').strip()}".strip()
+
+    try:
+        text = generate_wizard_dialogue(
+            subject=(course.subject or "").strip(),
+            level=(course.level or "").strip(),
+            description=(course.description or "").strip(),
+            extracted_text=context_text,
+            simplify=bool(payload.simplify),
+        )
+    except (LLMConfigError, LLMServiceError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("[API] GenerateDialogue unhandled error session_id=%s course_id=%s", payload.session_id, payload.course_id)
+        raise HTTPException(status_code=500, detail="Unable to generate dialogue right now.")
+
+    return ok(
+        GenerateDialogueResponse(
+            session_id=int(payload.session_id),
+            course_id=int(payload.course_id),
+            simplified=bool(payload.simplify),
+            dialogue_text=(text or "").strip(),
+        ).model_dump()
+    )
 
 
 @router.get("/questions/{course_id}", response_model=ApiResponse[GameQuestionsResponse])

@@ -17,6 +17,7 @@ public class QuizUIManager : MonoBehaviour
 
     [Header("Optional")]
     public EmotionCamera emotionCamera;
+    public EmotionManager emotionManager;
 
     private APIManager.GameQuestion current;
     private int currentIndex = -1;
@@ -80,6 +81,7 @@ public class QuizUIManager : MonoBehaviour
 
         if (emotionCamera == null) emotionCamera = FindObjectOfType<EmotionCamera>();
         if (emotionCamera != null) emotionCamera.SetQuestionContext(current.id);
+        if (emotionManager == null) emotionManager = FindObjectOfType<EmotionManager>();
 
         for (int i = 0; i < answerButtons.Length; i++)
         {
@@ -120,8 +122,13 @@ public class QuizUIManager : MonoBehaviour
 
         string selectedLetter = ((char)('A' + idx)).ToString();
         int timeSpentMs = Mathf.Max(0, Mathf.RoundToInt((Time.realtimeSinceStartup - shownAtRealtime) * 1000f));
-        string em = (emotionCamera != null) ? (emotionCamera.lastEmotion ?? "") : "";
-        float conf = (emotionCamera != null) ? emotionCamera.lastConfidence : 0.0f;
+        string em = (emotionManager != null) ? (emotionManager.LastState ?? "") : "";
+        float conf = (emotionManager != null) ? emotionManager.LastConfidence : 0.0f;
+        if (string.IsNullOrEmpty(em))
+        {
+            em = (emotionCamera != null) ? (emotionCamera.lastEmotion ?? "") : "";
+            conf = (emotionCamera != null) ? emotionCamera.lastConfidence : 0.0f;
+        }
 
         Debug.Log($"[QuizUI] SubmitAnswer questionId={current.id} selected={selectedLetter} timeMs={timeSpentMs} emotion={em} conf={conf:0.00}");
 
