@@ -27,3 +27,12 @@ backend/app/routes/dashboard.py (ajout latest + latest_for_session dans /emotion
 
 <img width="1015" height="644" alt="image" src="https://github.com/user-attachments/assets/779f62dc-5c16-4911-8871-2b64c08b6bdc" />
 
+# selement une imagination comment mon game:
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/1ed53df8-1fa6-475c-9518-344d846d918a" />
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/27b92584-d8e6-493b-be17-4bf5f8ba6934" />
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/67156711-b64d-4205-9235-0e096ae07c97" />
+<img width="1024" height="572" alt="image" src="https://github.com/user-attachments/assets/076f36bf-5811-47ac-bda6-b963ba706db8" />
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/04b0e181-5ec3-44fc-ad75-b703acc32097" />
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/24e5570a-d045-42a4-b442-b8f18af310fc" />
+
+
