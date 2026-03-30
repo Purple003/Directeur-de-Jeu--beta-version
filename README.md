@@ -35,4 +35,8 @@ backend/app/routes/dashboard.py (ajout latest + latest_for_session dans /emotion
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/04b0e181-5ec3-44fc-ad75-b703acc32097" />
 <img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/24e5570a-d045-42a4-b442-b8f18af310fc" />
 
+## le 30/3/2026 
+le start panle complet :
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/8e087581-da37-4722-8087-eb951f6f9e00" />
+
 
