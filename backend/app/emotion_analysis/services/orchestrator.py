@@ -37,11 +37,12 @@ class EmotionOrchestrator:
         h_label, h_conf = self._mp.heuristic_emotion(mp_metrics)
 
         df_snap: DeepFaceSnapshot | None = None
-        if mp_metrics.face_present:
-            try:
-                df_snap = self._df.analyze(img_bgr)
-            except Exception as exc:
-                logger.warning("[Orchestrator] DeepFace error (ignored): %s", exc)
+        # DeepFace is completely bypassed for real-time Web performance
+        # if mp_metrics.face_present:
+        #     try:
+        #         df_snap = self._df.analyze(img_bgr)
+        #     except Exception as exc:
+        #         logger.warning("[Orchestrator] DeepFace error (ignored): %s", exc)
 
         merged = fuse_signals_safe(mp=mp_metrics, df=df_snap, heuristic_emotion=h_label, heuristic_confidence=h_conf)
         if emotion_hint and not mp_metrics.face_present:

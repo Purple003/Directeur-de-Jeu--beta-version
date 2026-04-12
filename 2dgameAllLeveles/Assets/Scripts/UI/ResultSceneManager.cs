@@ -45,6 +45,17 @@ public class ResultSceneManager : MonoBehaviour
 
     public void PlayAgain()
     {
-        SceneManager.LoadScene(gameSceneName);
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        if (st == null) { SceneManager.LoadScene(gameSceneName); return; }
+
+        string diff = (st.lastRecommendedDifficulty ?? "").ToLower().Trim();
+        
+        // Adaptive level selection based on recommended difficulty
+        if (diff == "easy")
+            SceneManager.LoadScene("Level2_Easy");
+        else if (diff == "hard")
+            SceneManager.LoadScene("Level2_Hard");
+        else
+            SceneManager.LoadScene(gameSceneName); // medium = same level
     }
 }

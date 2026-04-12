@@ -245,11 +245,25 @@ public class GameManager : MonoBehaviour
     public void TakeDamage(int amount)
     {
         health = Mathf.Max(0, health - Mathf.Max(0, amount));
-        OnHealthChanged?.Invoke(health);
+
         if (health <= 0)
         {
-            if (!gameOverSequenceStarted) StartCoroutine(GameOverSequence());
+            // OPTION A: no-fail recovery
+            health = Mathf.Max(1, startingHealth);
+
+            if (enemyManager == null) enemyManager = FindObjectOfType<EnemyManager>();
+
+            // Force adaptation immediately (ignore EmotionManager timing)
+            AdaptationManager ad = null;
+            if (enemyManager != null) ad = enemyManager.adaptation;
+            if (ad == null) ad = FindObjectOfType<AdaptationManager>();
+            if (ad != null) ad.ForceStressed(60f);
+
+            // Remove current enemies for breathing space
+            if (enemyManager != null) enemyManager.ClearAll();
         }
+
+        OnHealthChanged?.Invoke(health);
         UpdateHUD();
     }
 

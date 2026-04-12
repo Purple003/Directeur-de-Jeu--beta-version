@@ -11,7 +11,6 @@ public class EmotionManager : MonoBehaviour
     [Header("Debug (no camera)")]
     public bool enable = true;
     public bool useHealthHeuristic = true;
-    public string fixedHint = "neutral";
 
     [Header("State (read-only)")]
     [SerializeField] private string lastState = "calm";
@@ -35,23 +34,44 @@ public class EmotionManager : MonoBehaviour
         if (Time.unscaledTime - lastSentAt < Mathf.Max(5f, intervalSeconds)) return;
         lastSentAt = Time.unscaledTime;
 
+        // --- Recherche de EmotionCamera ---
+        EmotionCamera cam = FindObjectOfType<EmotionCamera>();
+
+        // CASE 1 : La caméra existe et est active → on lui laisse la main, JAMAIS de fallback HTTP.
+        if (cam != null && cam.enableCamera)
+        {
+            if (!string.IsNullOrEmpty(cam.LastEmotion))
+            {
+                // La caméra a déjà un résultat → on le lit passivement.
+                lastState      = cam.LastEmotion;
+                lastConfidence = cam.LastConfidence;
+                OnEmotionUpdated?.Invoke(lastState, lastConfidence);
+                Debug.Log($"[EmotionManager] Lecture depuis EmotionCamera : state={lastState} conf={lastConfidence:0.00}");
+            }
+            else
+            {
+                // La caméra est active mais n'a pas encore envoyé sa première frame → on attend.
+                // AUCUNE requête HTTP ici, sinon le backend cache "neutral" et bloque la vraie photo.
+                Debug.Log("[EmotionManager] EmotionCamera active mais LastEmotion encore vide → on attend sans envoyer de hint");
+            }
+            return;
+        }
+
+        // CASE 2 : Pas de caméra ou caméra désactivée → fallback hint uniquement.
         string hint = PickHint();
+        Debug.Log("[EmotionManager] Pas de caméra active → fallback hint = '" + hint + "'");
         StartCoroutine(SendHint(st.sessionId, hint));
     }
 
     string PickHint()
     {
-        if (!useHealthHeuristic) return fixedHint;
+        if (!useHealthHeuristic) return "neutral";
 
         GameManager gm = FindObjectOfType<GameManager>();
-        if (gm == null) return fixedHint;
+        if (gm == null) return "neutral";
 
-        // Simple, deterministic heuristic for prototyping (no camera):
-        // - Low HP => sad (stressed)
-        // - Full HP => happy (engaged)
-        // - Otherwise => neutral (calm)
+        // Seul le stress critique (HP <= 1) est signalé. Jamais "happy".
         if (gm.CurrentHealth <= 1) return "sad";
-        if (gm.CurrentHealth >= 3) return "happy";
         return "neutral";
     }
 
@@ -76,10 +96,9 @@ public class EmotionManager : MonoBehaviour
             yield break;
         }
 
-        lastState = state;
+        lastState      = state;
         lastConfidence = conf;
         OnEmotionUpdated?.Invoke(lastState, lastConfidence);
         Debug.Log($"[EmotionManager] state={lastState} conf={lastConfidence:0.00} (hint={hint})");
     }
 }
-

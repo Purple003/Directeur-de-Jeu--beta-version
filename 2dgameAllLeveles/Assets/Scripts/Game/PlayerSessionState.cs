@@ -7,7 +7,7 @@ public class PlayerSessionState : MonoBehaviour
     public static PlayerSessionState Instance;
 
     [Header("Player")]
-    public int playerId = 0;
+    public int playerId = 1;
     public string playerName = "";
 
     [Header("Progress")]

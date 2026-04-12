@@ -226,6 +226,24 @@ def end_session(
             except ProgressionServiceError:
                 next_level, recommended = None, None
 
+            # --- DYNAMIC DIFFICULTY BASED ON HYBRID EMOTION ---
+            from .adaptation_service import compute_difficulty_from_score, apply_emotion_adjustment
+            base_diff = compute_difficulty_from_score(final_score)
+            
+            last_ans = db.query(Answer).filter(Answer.session_id == session.id, Answer.emotion.isnot(None)).order_by(Answer.id.desc()).first()
+            last_emotion = last_ans.emotion if last_ans else None
+            
+            if not last_emotion:
+                last_evt = db.query(EmotionEvent).filter(EmotionEvent.session_id == session.id).order_by(EmotionEvent.id.desc()).first()
+                last_emotion = last_evt.emotion if last_evt else None
+            
+            recommended = apply_emotion_adjustment(base_diff, last_emotion)
+            print(f"[ADAPTATION] last_emotion={last_emotion} base={base_diff} recommended={recommended}")
+            
+            lp = db.query(LevelProgress).filter(LevelProgress.session_id == session.id).order_by(LevelProgress.id.desc()).first()
+            if lp:
+                lp.recommended_difficulty = recommended
+
             db.commit()
         except Exception as exc:
             db.rollback()

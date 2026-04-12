@@ -122,13 +122,16 @@ public class QuizUIManager : MonoBehaviour
 
         string selectedLetter = ((char)('A' + idx)).ToString();
         int timeSpentMs = Mathf.Max(0, Mathf.RoundToInt((Time.realtimeSinceStartup - shownAtRealtime) * 1000f));
-        string em = (emotionManager != null) ? (emotionManager.LastState ?? "") : "";
-        float conf = (emotionManager != null) ? emotionManager.LastConfidence : 0.0f;
+
+        // --- MODIFICATION ICI : La Caméra est prioritaire sur les HP ---
+        string em = (emotionCamera != null) ? (emotionCamera.lastEmotion ?? "") : "";
+        float conf = (emotionCamera != null) ? emotionCamera.lastConfidence : 0.0f;
         if (string.IsNullOrEmpty(em))
         {
-            em = (emotionCamera != null) ? (emotionCamera.lastEmotion ?? "") : "";
-            conf = (emotionCamera != null) ? emotionCamera.lastConfidence : 0.0f;
+            em = (emotionManager != null) ? (emotionManager.LastState ?? "") : "";
+            conf = (emotionManager != null) ? emotionManager.LastConfidence : 0.0f;
         }
+        // -----------------------------------------------------------
 
         Debug.Log($"[QuizUI] SubmitAnswer questionId={current.id} selected={selectedLetter} timeMs={timeSpentMs} emotion={em} conf={conf:0.00}");
 

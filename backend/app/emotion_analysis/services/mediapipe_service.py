@@ -104,6 +104,25 @@ class MediaPipeLandmarkService:
 
         smile_signal = mouth_width - (mouth_open * 0.5)
 
+        # --- Implémentation FACS (Scale-invariant Ratios) ---
+        face_width = dist(234, 454)  # Largeur totale du visage
+        if face_width < 0.0001:
+            face_width = 0.0001
+
+        eye_width_l = dist(33, 133)
+        eye_width_r = dist(362, 263)
+        avg_eye_width = (eye_width_l + eye_width_r) / 2.0
+        if avg_eye_width < 0.0001:
+            avg_eye_width = 0.0001
+
+        # Calcul de l'écart sourcils-yeux proportionnel au visage
+        brow_eye_dist = (dist(107, 159) + dist(66, 386)) / 2.0
+        
+        facs_brow_down_ratio = brow_eye_dist / face_width
+        facs_eye_opening_ratio = eye_open / avg_eye_width
+        facs_mouth_width_ratio = mouth_width / face_width
+        facs_mouth_open_ratio = mouth_open / face_width
+
         return LandmarkMetrics(
             mouth_open=mouth_open,
             mouth_width=mouth_width,
@@ -112,31 +131,54 @@ class MediaPipeLandmarkService:
             brow_asym=brow_asym,
             smile_signal=smile_signal,
             face_present=True,
+            facs_brow_down_ratio=facs_brow_down_ratio,
+            facs_eye_opening_ratio=facs_eye_opening_ratio,
+            facs_mouth_width_ratio=facs_mouth_width_ratio,
+            facs_mouth_open_ratio=facs_mouth_open_ratio,
         )
 
     def heuristic_emotion(self, m: LandmarkMetrics) -> tuple[str, float]:
         """
-        Lightweight classifier when DeepFace is unavailable or throttled.
-        Thresholds match the legacy backend heuristics.
+        Système FACS en Ratios (Invariant à la distance caméra).
         """
         if not m.face_present:
             return "neutral", 0.5
 
-        if m.smile_signal > 0.06 and m.mouth_width > 0.10:
-            conf = min(0.95, 0.55 + (m.smile_signal - 0.06) * 5.0)
-            return "happy", conf
+        # Si face détectée MAIS yeux quasi-fermés = bored
+        if m.face_present and m.facs_eye_opening_ratio < 0.12:
+            return "bored", 0.80
 
-        if m.brow_asym > 0.025 and m.brow_raise > 0.02:
-            conf = min(0.9, 0.5 + (m.brow_asym - 0.025) * 10.0)
-            return "confused", conf
+        print(f"[DEBUG FACS] brow_ratio={m.facs_brow_down_ratio:.3f} | eye_ratio={m.facs_eye_opening_ratio:.3f} | mouth_w={m.facs_mouth_width_ratio:.3f} | mouth_o={m.facs_mouth_open_ratio:.3f}")
 
-        if m.brow_raise < 0.012 and m.eye_open < 0.018:
-            conf = min(0.9, 0.5 + (0.018 - m.eye_open) * 20.0)
+        # 1. Colère/Frustration : sourcils descendus vers les yeux
+        # Valeurs normales de brow_ratio chez cet utilisateur : ~0.36-0.43
+        # En fronçant fort, descend vers ~0.32-0.34
+        if m.facs_brow_down_ratio < 0.34 and m.facs_eye_opening_ratio > 0.25:
+            conf = min(0.95, 0.5 + (0.34 - m.facs_brow_down_ratio) * 10.0)
+            return "frustrated", conf
+        if m.facs_brow_down_ratio < 0.36:
+            conf = min(0.78, 0.5 + (0.36 - m.facs_brow_down_ratio) * 7.0)
             return "frustrated", conf
 
-        if m.eye_open >= 0.02 and m.mouth_open < 0.012:
-            conf = min(0.9, 0.5 + (m.eye_open - 0.02) * 10.0)
+        # 2. Joie/Happy : Étirement de la bouche par rapport à la largeur de la tête
+        if m.facs_mouth_width_ratio > 0.40 and m.facs_mouth_open_ratio > 0.05:
+            conf = min(0.9, 0.5 + (m.facs_mouth_width_ratio - 0.40) * 5.0)
+            return "happy", conf
+
+        # 3. Concentration/Focus : deux niveaux de tolérance
+        # Niveau 1 : Yeux bien ouverts (fort engagement)
+        if m.facs_eye_opening_ratio > 0.28 and m.facs_mouth_open_ratio < 0.10:
+            conf = min(0.90, 0.5 + (m.facs_eye_opening_ratio - 0.28) * 4.0)
             return "focused", conf
+        # Niveau 2 : Yeux légèrement mi-clos mais bouche fermée (concentration normale)
+        if m.facs_eye_opening_ratio > 0.20 and m.facs_mouth_open_ratio < 0.08:
+            conf = min(0.78, 0.5 + (m.facs_eye_opening_ratio - 0.20) * 3.5)
+            return "focused", conf
+
+        # 4. Ennui/Boredom : Yeux mi-clos / paupières tombantes, visage relâché
+        if m.facs_eye_opening_ratio < 0.18 and m.facs_mouth_open_ratio < 0.15:
+            conf = min(0.85, 0.5 + (0.18 - m.facs_eye_opening_ratio) * 4.0)
+            return "bored", conf
 
         return "neutral", 0.55
 

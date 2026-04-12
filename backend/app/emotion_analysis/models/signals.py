@@ -14,6 +14,12 @@ class LandmarkMetrics:
     brow_asym: float = 0.0
     smile_signal: float = 0.0
     face_present: bool = False
+    
+    # --- FACS Ratios (Distance-invariant) ---
+    facs_brow_down_ratio: float = 0.0
+    facs_eye_opening_ratio: float = 0.0
+    facs_mouth_width_ratio: float = 0.0
+    facs_mouth_open_ratio: float = 0.0
 
 
 @dataclass

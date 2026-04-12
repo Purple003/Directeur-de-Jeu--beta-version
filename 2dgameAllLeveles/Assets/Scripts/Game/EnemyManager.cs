@@ -91,6 +91,7 @@ public class EnemyManager : MonoBehaviour
 
     public void ClearAll()
     {
+        StopAllCoroutines();
         for (int i = 0; i < alive.Count; i++)
         {
             if (alive[i] != null) Destroy(alive[i]);

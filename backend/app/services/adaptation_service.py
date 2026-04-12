@@ -20,29 +20,31 @@ def compute_difficulty_from_score(score: float) -> str:
     return "hard"
 
 
-def apply_emotion_adjustment(difficulty: str, emotion_score: float | None) -> str:
+def apply_emotion_adjustment(difficulty: str, emotion_state: str | None) -> str:
     """
-    emotion_score is reserved for future emotion pipelines.
-    For now we treat high values as frustration and reduce difficulty by one level.
+    Adjusts difficulty based on the 3-state Flow model.
+    emotion_state: "stressed" | "bored" | "engaged"
     """
-    if emotion_score is None:
+    if not emotion_state:
         return difficulty
-
-    frustration_threshold = 70.0
-    if emotion_score < frustration_threshold:
-        return difficulty
-
+    
+    e = emotion_state.strip().lower()
     try:
         idx = _ORDER.index(difficulty)
     except ValueError:
-        return difficulty
-
-    return _ORDER[max(0, idx - 1)]
+        idx = 1  # default medium
+    
+    if e == "stressed":
+        return _ORDER[max(0, idx - 1)]      # réduire difficulté
+    if e == "bored":
+        return _ORDER[min(2, idx + 1)]      # augmenter difficulté
+    return difficulty                        # engaged = garder
 
 
 def submit_score_and_recommend(db: Session, payload: SubmitScoreRequest) -> tuple[int, str]:
     base = compute_difficulty_from_score(payload.score)
-    recommended = apply_emotion_adjustment(base, payload.emotion_score)
+    emotion_state = getattr(payload, 'emotion_state', None)
+    recommended = apply_emotion_adjustment(base, emotion_state)
 
     try:
         row = PlayerProgress(

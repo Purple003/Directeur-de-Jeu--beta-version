@@ -21,6 +21,8 @@ public class EnemyQuizTrigger : MonoBehaviour
 
         if (!gm.IsReadyForQuiz()) return;
 
+        FindObjectOfType<EmotionCamera>()?.AnalyzeNow(PlayerSessionState.EnsureInstance().sessionId, 0);
+
         inQuiz = true;
         if (col != null) col.enabled = false; // avoid retrigger while quiz is open
 

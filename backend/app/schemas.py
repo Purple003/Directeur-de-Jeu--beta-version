@@ -119,6 +119,7 @@ class SubmitScoreRequest(BaseModel):
     course_id: int
     score: float = Field(..., ge=0, le=100)
     emotion_score: float | None = Field(default=None, ge=0, le=100)
+    emotion_state: str | None = None
 
 
 class SubmitScoreResponse(BaseModel):
