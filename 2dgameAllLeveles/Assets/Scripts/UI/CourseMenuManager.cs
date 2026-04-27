@@ -33,13 +33,41 @@ public class CourseMenuManager : MonoBehaviour
         LoadPrefsIntoUI();
         RefreshUI();
 
-        // If we already have a playerId saved, refresh profile from backend.
+        StartCoroutine(EnsurePlayerExists());
+    }
+
+    private IEnumerator EnsurePlayerExists()
+    {
         PlayerSessionState st = PlayerSessionState.Instance;
-        if (st != null && st.playerId > 0 && APIManager.Instance != null)
+
+        if (st.playerId > 0)
         {
-            // Mark as loading to avoid race with StartGame button.
-            StartCoroutine(LoadPlayerRoutine(st.playerId, onLoaded: null));
+            yield return LoadPlayerRoutine(st.playerId, null);
+            yield break;
         }
+
+        bool done = false;
+
+        yield return APIManager.Instance.CreatePlayer(
+            "Player_" + System.DateTime.Now.Ticks,
+            null,
+            "",
+            "",
+            (newId) =>
+            {
+                st.playerId = newId;
+                PlayerPrefs.SetInt("asg_player_id", newId);
+                PlayerPrefs.Save();
+                done = true;
+            },
+            (err) =>
+            {
+                Debug.LogError("Create player failed: " + err);
+                done = true;
+            }
+        );
+
+        while (!done) yield return null;
     }
 
     public void CreatePlayer()

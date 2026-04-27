@@ -7,7 +7,7 @@ public class PlayerSessionState : MonoBehaviour
     public static PlayerSessionState Instance;
 
     [Header("Player")]
-    public int playerId = 1;
+    public int playerId = 0;
     public string playerName = "";
 
     [Header("Progress")]
@@ -35,6 +35,7 @@ public class PlayerSessionState : MonoBehaviour
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            InitializePlayerId();
         }
         else
         {
@@ -70,6 +71,18 @@ public class PlayerSessionState : MonoBehaviour
         Instance = go.AddComponent<PlayerSessionState>();
         DontDestroyOnLoad(go);
         return Instance;
+    }
+
+    public void InitializePlayerId()
+    {
+        if (playerId > 0) return;
+
+        int savedId = PlayerPrefs.GetInt("asg_player_id", 0);
+
+        if (savedId > 0)
+        {
+            playerId = savedId;
+        }
     }
 
     public bool HasValidPlayer() => playerId > 0;
