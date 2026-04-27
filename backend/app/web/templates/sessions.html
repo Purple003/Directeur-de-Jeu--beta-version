@@ -1,24 +1,78 @@
+{% set title = "Sessions" %}
 {% extends "base.html" %}
-{% block content %}
-  <section class="card">
-    <h2>Sessions</h2>
-    <div class="table">
-      <div class="row head">
-        <div>ID</div><div>Player</div><div>Course</div><div>Started</div><div>Ended</div><div>Duration</div><div>Score</div><div>Accuracy</div>
-      </div>
-      {% for s in sessions %}
-        <div class="row">
-          <div>{{ s.id }}</div>
-          <div>{{ s.player_name }}</div>
-          <div>{{ s.course_subject }}</div>
-          <div>{{ s.started_at }}</div>
-          <div>{{ s.ended_at or "-" }}</div>
-          <div>{{ s.duration_s }}</div>
-          <div>{{ s.final_score or "-" }}</div>
-          <div>{{ (s.accuracy * 100) | round(1) }}%</div>
-        </div>
-      {% endfor %}
-    </div>
-  </section>
-{% endblock %}
 
+{% block content %}
+
+<!-- Sessions Table -->
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">
+            <i data-lucide="clock" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+            Game Sessions
+        </span>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">{{ sessions|length }} recorded</span>
+    </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Session</th>
+                    <th>Player</th>
+                    <th>Course</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Score</th>
+                    <th>Accuracy</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                {% set acc = (s.accuracy * 100) | round(1) %}
+                <tr>
+                    <td style="font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">#{{ '%04d' % s.id }}</td>
+                    <td style="font-weight: 500;">{{ s.player_name }}</td>
+                    <td style="color: var(--text-secondary);">{{ s.course_subject }}</td>
+                    <td style="font-size: 0.8rem; color: var(--text-muted);">
+                        {{ s.started_at.strftime('%d %b %Y, %H:%M') if s.started_at else '—' }}
+                    </td>
+                    <td>
+                        {% if s.duration_s and s.duration_s != '-' %}
+                            <span style="font-size: 0.82rem;">{{ s.duration_s }}s</span>
+                        {% else %}
+                            <span style="color: var(--text-muted);">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-weight: 600;">
+                        {{ s.final_score | round(1) if s.final_score else "—" }}
+                    </td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 50px; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden;">
+                                <div style="width: {{ acc }}%; height: 100%; background: {{ 'var(--status-success)' if acc >= 70 else ('var(--status-warning)' if acc >= 40 else 'var(--status-error)') }}; border-radius: 99px;"></div>
+                            </div>
+                            <span style="font-size: 0.82rem; font-weight: 600;">{{ acc }}%</span>
+                        </div>
+                    </td>
+                    <td>
+                        {% if acc >= 70 %}
+                            <span class="badge badge-green">Pass</span>
+                        {% elif acc >= 40 %}
+                            <span class="badge badge-orange">Partial</span>
+                        {% else %}
+                            <span class="badge badge-red">Fail</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 48px; color: var(--text-muted);">
+                        No sessions recorded yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

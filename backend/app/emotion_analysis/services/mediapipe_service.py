@@ -142,7 +142,7 @@ class MediaPipeLandmarkService:
         Système FACS en Ratios (Invariant à la distance caméra).
         """
         if not m.face_present:
-            return "neutral", 0.5
+            return "bored", 0.75
 
         # Si face détectée MAIS yeux quasi-fermés = bored
         if m.face_present and m.facs_eye_opening_ratio < 0.12:

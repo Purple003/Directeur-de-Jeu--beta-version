@@ -1,24 +1,111 @@
+{% set title = "Players" %}
 {% extends "base.html" %}
-{% block content %}
-  <section class="card">
-    <h2>Players</h2>
-    <div class="table">
-      <div class="row head">
-        <div>ID</div><div>Name</div><div>Age</div><div>School</div><div>XP</div><div>Level</div><div>Sessions</div><div>Accuracy</div>
-      </div>
-      {% for p in players %}
-        <div class="row">
-          <div>{{ p.id }}</div>
-          <div>{{ p.name }}</div>
-          <div>{{ p.age or "-" }}</div>
-          <div>{{ p.school_level or "-" }}</div>
-          <div>{{ p.experience_level or "-" }}</div>
-          <div><span class="pill">{{ p.game_level }}</span></div>
-          <div>{{ p.total_sessions }}</div>
-          <div>{{ (p.accuracy * 100) | round(1) }}%</div>
-        </div>
-      {% endfor %}
-    </div>
-  </section>
-{% endblock %}
 
+{% block content %}
+
+<!-- Summary row -->
+<div class="grid-3" style="margin-bottom: 24px;">
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Total Players</div>
+        <div class="kpi-value">{{ players|length }}</div>
+        <div class="kpi-meta"><i data-lucide="users" style="width:12px;height:12px;"></i> Registered accounts</div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Avg Accuracy</div>
+        {% if players %}
+            {% set avg = (players | sum(attribute='accuracy') / players|length * 100) | round(1) %}
+        {% else %}
+            {% set avg = 0 %}
+        {% endif %}
+        <div class="kpi-value" style="color: var(--status-success);">{{ avg }}%</div>
+        <div class="kpi-meta"><i data-lucide="target" style="width:12px;height:12px;"></i> All players combined</div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Total Sessions</div>
+        <div class="kpi-value">{{ players | sum(attribute='total_sessions') if players else 0 }}</div>
+        <div class="kpi-meta"><i data-lucide="clock" style="width:12px;height:12px;"></i> Cumulative gameplay</div>
+    </div>
+</div>
+
+<!-- Players Table -->
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">
+            <i data-lucide="users" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+            Player Registry
+        </span>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">{{ players|length }} players</span>
+    </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Age</th>
+                    <th>School Level</th>
+                    <th>XP Tier</th>
+                    <th>Game Level</th>
+                    <th>Sessions</th>
+                    <th>Accuracy</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in players %}
+                {% set acc = (p.accuracy * 100) | round(1) %}
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="
+                                width: 32px; height: 32px; border-radius: 50%;
+                                background: var(--accent-subtle); color: var(--accent-base);
+                                display: flex; align-items: center; justify-content: center;
+                                font-weight: 700; font-size: 0.85rem; flex-shrink: 0;
+                            ">{{ p.name[0] | upper }}</div>
+                            <div>
+                                <div style="font-weight: 600;">{{ p.name }}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">ID #{{ '%04d' % p.id }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>{{ p.age or "—" }}</td>
+                    <td>{{ p.school_level or "—" }}</td>
+                    <td>
+                        {% if p.experience_level %}
+                            <span class="badge badge-blue" style="text-transform: capitalize;">{{ p.experience_level }}</span>
+                        {% else %}
+                            <span style="color: var(--text-muted);">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-weight: 700; color: var(--accent-base);">{{ p.game_level }}</td>
+                    <td>{{ p.total_sessions }}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 50px; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden;">
+                                <div style="width: {{ acc }}%; height: 100%; background: {{ 'var(--status-success)' if acc >= 70 else ('var(--status-warning)' if acc >= 40 else 'var(--status-error)') }}; border-radius: 99px;"></div>
+                            </div>
+                            <span style="font-size: 0.82rem; font-weight: 600; color: {{ 'var(--status-success)' if acc >= 70 else ('var(--status-warning)' if acc >= 40 else 'var(--status-error)') }};">{{ acc }}%</span>
+                        </div>
+                    </td>
+                    <td>
+                        {% if acc >= 70 %}
+                            <span class="badge badge-green">On Track</span>
+                        {% elif acc >= 40 %}
+                            <span class="badge badge-orange">At Risk</span>
+                        {% else %}
+                            <span class="badge badge-red">Struggling</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 48px; color: var(--text-muted);">
+                        No players registered yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

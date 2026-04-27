@@ -33,7 +33,7 @@ def _get_owned_course(db: Session, *, course_id: int, professor_id: int) -> Cour
 
 @router.get("/login", response_class=HTMLResponse)
 def dashboard_login(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None})
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -51,12 +51,13 @@ def dashboard_login_post(
     except AuthServiceError as exc:
         if "JWT_SECRET" in str(exc):
             return templates.TemplateResponse(
+                request,
                 "login.html",
-                {"request": request, "error": str(exc)},
+                {"error": str(exc)},
                 status_code=500,
             )
         return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Invalid credentials."}, status_code=401
+            request, "login.html", {"error": "Invalid credentials."}, status_code=401
         )
 
     resp = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
@@ -82,8 +83,9 @@ def dashboard_home(request: Request, db: Session = Depends(get_db), _user=Profes
         .all()
     )
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
-        {"request": request, "courses": courses},
+        {"courses": courses},
     )
 
 
@@ -118,7 +120,7 @@ def dashboard_players(request: Request, db: Session = Depends(get_db), _user=Pro
                 "accuracy": float(avg_correct or 0.0),
             }
         )
-    return templates.TemplateResponse("players.html", {"request": request, "players": players})
+    return templates.TemplateResponse(request, "players.html", {"players": players})
 
 
 @router.get("/sessions", response_class=HTMLResponse)
@@ -156,7 +158,7 @@ def dashboard_sessions(request: Request, db: Session = Depends(get_db), _user=Pr
                 "accuracy": float(accuracy),
             }
         )
-    return templates.TemplateResponse("sessions.html", {"request": request, "sessions": items})
+    return templates.TemplateResponse(request, "sessions.html", {"sessions": items})
 
 
 @router.get("/analytics", response_class=HTMLResponse)
@@ -184,8 +186,9 @@ def dashboard_analytics(request: Request, db: Session = Depends(get_db), _user=P
         "accuracy": float(accuracy),
     }
     return templates.TemplateResponse(
+        request,
         "analytics.html",
-        {"request": request, "summary": summary, "emotions": emotions},
+        {"summary": summary, "emotions": emotions},
     )
 
 
@@ -195,8 +198,9 @@ def dashboard_course(course_id: int, request: Request, db: Session = Depends(get
     if not course:
         raise HTTPException(status_code=404, detail="Course not found.")
     return templates.TemplateResponse(
+        request,
         "course.html",
-        {"request": request, "course": course},
+        {"course": course},
     )
 
 

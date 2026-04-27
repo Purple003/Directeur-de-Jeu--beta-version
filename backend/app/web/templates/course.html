@@ -1,26 +1,145 @@
+{% set title = "Course Details" %}
 {% extends "base.html" %}
+
 {% block content %}
-  <section class="card">
-    <h2>Course #{{ course.id }}: {{ course.subject }}</h2>
-    <div class="meta">
-      <div><b>Level:</b> {{ course.level }}</div>
-      <div><b>Created:</b> {{ course.created_at }}</div>
-      <div><b>File:</b> {{ course.file_path or "n/a" }}</div>
+
+<!-- Course Header Card -->
+<div class="card" style="margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+        <div>
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-base); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">
+                Course #{{ '%04d' % course.id }}
+            </div>
+            <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 12px;">{{ course.subject }}</h2>
+            <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.85rem; color: var(--text-secondary);">
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="bar-chart-2" style="width:14px;height:14px;"></i>
+                    {% if course.level == "Advanced" %}
+                        <span class="badge badge-purple">{{ course.level }}</span>
+                    {% elif course.level == "Intermediate" %}
+                        <span class="badge badge-blue">{{ course.level }}</span>
+                    {% else %}
+                        <span class="badge badge-green">{{ course.level }}</span>
+                    {% endif %}
+                </span>
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="calendar" style="width:14px;height:14px;"></i>
+                    {{ course.created_at.strftime('%d %B %Y') if course.created_at else '—' }}
+                </span>
+                {% if course.file_path %}
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="file-text" style="width:14px;height:14px;"></i> Document attached
+                </span>
+                {% endif %}
+            </div>
+            {% if course.description %}
+            <p style="margin-top: 12px; color: var(--text-secondary); font-size: 0.9rem; max-width: 600px;">{{ course.description }}</p>
+            {% endif %}
+        </div>
+        <a href="/dashboard" class="btn">
+            <i data-lucide="arrow-left" style="width:16px;height:16px;"></i> Back
+        </a>
     </div>
-    <p class="desc">{{ course.description }}</p>
-  </section>
+</div>
 
-  <div class="grid">
-    <section class="card">
-      <h3>Results</h3>
-      <canvas id="resultsChart" data-course-id="{{ course.id }}"></canvas>
-      <div class="small" id="resultsSummary"></div>
-    </section>
-    <section class="card">
-      <h3>Emotion Summary</h3>
-      <canvas id="emotionChart" data-course-id="{{ course.id }}"></canvas>
-      <div class="small">This is populated from stored <code>/emotion/analyze</code> events.</div>
-    </section>
-  </div>
+<!-- Charts Row -->
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <i data-lucide="bar-chart-2" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+                Session Results
+            </span>
+        </div>
+        <canvas id="resultsChart" data-course-id="{{ course.id }}" style="max-height: 240px;"></canvas>
+        <div id="resultsSummary" style="text-align: center; margin-top: 12px; font-size: 0.8rem; color: var(--text-muted);"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <i data-lucide="heart-pulse" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+                Emotion Breakdown
+            </span>
+        </div>
+        <canvas id="emotionChart" data-course-id="{{ course.id }}" style="max-height: 240px;"></canvas>
+        <div style="text-align: center; margin-top: 12px; font-size: 0.8rem; color: var(--text-muted);">
+            Populated from in-game emotion tracking events.
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js Script -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const courseId = document.getElementById("resultsChart")?.dataset.courseId;
+    if (!courseId) return;
+
+    const chartDefaults = {
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { color: "rgba(0,0,0,0.04)" }, ticks: { color: "#6b7280", font: { size: 11 } } },
+            y: { grid: { color: "rgba(0,0,0,0.04)" }, ticks: { color: "#6b7280", font: { size: 11 } }, beginAtZero: true }
+        }
+    };
+
+    fetch(`/dashboard/api/course/${courseId}/results`)
+        .then(r => r.json())
+        .then(data => {
+            const summary = data?.data?.summary;
+            const el = document.getElementById("resultsSummary");
+            if (summary && el) {
+                el.textContent = `Sessions: ${summary.total_sessions} · Avg accuracy: ${(summary.avg_accuracy * 100).toFixed(1)}%`;
+            }
+            const sessions = data?.data?.sessions || [];
+            if (sessions.length > 0) {
+                new Chart(document.getElementById("resultsChart"), {
+                    type: "bar",
+                    data: {
+                        labels: sessions.map(s => `S${s.session_id}`),
+                        datasets: [{
+                            label: "Score",
+                            data: sessions.map(s => (s.accuracy * 100).toFixed(1)),
+                            backgroundColor: "rgba(99,102,241,0.7)",
+                            borderRadius: 6
+                        }]
+                    },
+                    options: chartDefaults
+                });
+            }
+        })
+        .catch(() => {});
+
+    fetch(`/dashboard/api/course/${courseId}/emotion-summary`)
+        .then(r => r.json())
+        .then(data => {
+            const counts = data?.data?.counts || {};
+            const labels = Object.keys(counts);
+            const values = Object.values(counts);
+            const colors = {
+                focused: "#10b981", frustrated: "#ef4444", bored: "#9ca3af",
+                confused: "#f59e0b", happy: "#8b5cf6", neutral: "#3b82f6"
+            };
+            if (labels.length > 0) {
+                new Chart(document.getElementById("emotionChart"), {
+                    type: "doughnut",
+                    data: {
+                        labels,
+                        datasets: [{
+                            data: values,
+                            backgroundColor: labels.map(l => colors[l] || "#6366f1"),
+                            borderWidth: 2,
+                            borderColor: "#ffffff"
+                        }]
+                    },
+                    options: {
+                        cutout: "60%",
+                        plugins: { legend: { position: "bottom", labels: { font: { size: 11 }, color: "#6b7280" } } }
+                    }
+                });
+            }
+        })
+        .catch(() => {});
+});
+</script>
 {% endblock %}
-

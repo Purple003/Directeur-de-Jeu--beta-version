@@ -1,39 +1,89 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ title or "Adaptive Serious Game" }}</title>
-    <link rel="stylesheet" href="/static/css/app.css" />
-    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script defer src="/static/js/dashboard.js"></script>
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo">ASG</div>
-        <div class="brand-text">
-          <div class="brand-title">Adaptive Serious Game</div>
-          <div class="brand-subtitle">Professor Dashboard</div>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title or "EduForge" }} · EduForge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    {% if mode == "auth" %}
+        <div class="auth-wrapper" style="display: flex; justify-content: center; align-items: center; min-height: 100vh;">
+            {% block auth_content %}{% endblock %}
         </div>
-      </div>
-      <nav class="nav">
-        <a href="/dashboard" class="nav-link">Courses</a>
-        <a href="/dashboard/players" class="nav-link">Players</a>
-        <a href="/dashboard/sessions" class="nav-link">Sessions</a>
-        <a href="/dashboard/analytics" class="nav-link">Analytics</a>
-        <form action="/dashboard/logout" method="post" style="margin:0;">
-          <button class="nav-link" style="border:none;background:transparent;cursor:pointer;">Logout</button>
-        </form>
-      </nav>
-    </header>
+    {% else %}
+        <div class="app-wrapper">
+            
+            <!-- Sidebar Navigation -->
+            <aside class="sidebar">
+                <div class="sidebar-brand">
+                    <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; box-shadow: 0 2px 8px rgba(99,102,241,0.4); flex-shrink: 0;">
+                        <i data-lucide="flame" style="width: 18px; height: 18px;"></i>
+                    </div>
+                    <span>Edu<strong style="color: var(--accent-base);">Forge</strong></span>
+                </div>
+                
+                <nav class="sidebar-nav">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; padding: 12px; margin-top: 8px;">Main Menu</div>
+                    <a href="/dashboard" class="nav-item {{ 'active' if title == 'Dashboard' else '' }}">
+                        <i data-lucide="layout-dashboard" style="width: 18px; height: 18px;"></i> Overview
+                    </a>
+                    <a href="/dashboard/players" class="nav-item">
+                        <i data-lucide="users" style="width: 18px; height: 18px;"></i> Players
+                    </a>
+                    <a href="/dashboard/sessions" class="nav-item">
+                        <i data-lucide="clock" style="width: 18px; height: 18px;"></i> Sessions
+                    </a>
+                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; padding: 12px; margin-top: 16px;">Reports</div>
+                    <a href="/dashboard/analytics" class="nav-item {{ 'active' if title == 'Analytics' else '' }}">
+                        <i data-lucide="bar-chart-2" style="width: 18px; height: 18px;"></i> Emotion Analytics
+                    </a>
+                    <a href="#" class="nav-item">
+                        <i data-lucide="target" style="width: 18px; height: 18px;"></i> Performance
+                    </a>
+                </nav>
+                
+                <div class="sidebar-footer">
+                    <form action="/dashboard/logout" method="post" style="margin: 0;">
+                        <button type="submit" class="btn-logout">
+                            <i data-lucide="log-out" style="width: 18px; height: 18px;"></i> Sign Out
+                        </button>
+                    </form>
+                </div>
+            </aside>
+            
+            <!-- Main Content Area -->
+            <main class="main-area">
+                
+                <!-- Top Header -->
+                <header class="top-header">
+                    <h1 class="header-title">{{ title or "Dashboard" }}</h1>
+                    <div class="header-actions">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-secondary); background: var(--bg-app); padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                            <i data-lucide="calendar" style="width: 14px; height: 14px;"></i>
+                            <span>Last 30 Days</span>
+                            <i data-lucide="chevron-down" style="width: 14px; height: 14px;"></i>
+                        </div>
+                        <button class="btn">
+                            <i data-lucide="download" style="width: 16px; height: 16px;"></i> Export
+                        </button>
+                    </div>
+                </header>
+                
+                <!-- Page Content -->
+                <div class="content-area">
+                    {% block content %}{% endblock %}
+                </div>
+            </main>
+        </div>
+    {% endif %}
 
-    <main class="container">
-      {% block content %}{% endblock %}
-    </main>
-
-    <footer class="footer">
-      <span>Backend MVP</span>
-    </footer>
-  </body>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
 </html>

@@ -1,28 +1,195 @@
+{% set title = "Analytics" %}
 {% extends "base.html" %}
+
 {% block content %}
-  <div class="grid">
-    <section class="card">
-      <h2>Platform Analytics</h2>
-      <div class="meta">
-        <div><b>Total courses:</b> {{ summary.total_courses }}</div>
-        <div><b>Total players:</b> {{ summary.total_players }}</div>
-        <div><b>Total sessions:</b> {{ summary.total_sessions }}</div>
-        <div><b>Total answers:</b> {{ summary.total_answers }}</div>
-        <div><b>Overall accuracy:</b> {{ (summary.accuracy * 100) | round(1) }}%</div>
-      </div>
-      <p class="hint">This aggregates stored answers/sessions and updates as Unity gameplay runs.</p>
-    </section>
 
-    <section class="card">
-      <h3>Emotion Summary</h3>
-      <div class="small">Counts across all stored emotion events.</div>
-      <div class="table">
-        <div class="row head"><div>Emotion</div><div>Count</div></div>
+<!-- Summary KPIs -->
+<div class="grid-4" style="margin-bottom: 24px;">
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Total Answers</div>
+        <div class="kpi-value">{{ summary.total_answers }}</div>
+        <div class="kpi-meta"><i data-lucide="check-square" style="width:12px;height:12px;"></i> Platform wide</div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Overall Accuracy</div>
+        <div class="kpi-value" style="color: var(--status-success);">{{ (summary.accuracy * 100) | round(1) }}%</div>
+        <div class="kpi-meta"><i data-lucide="trending-up" style="width:12px;height:12px;"></i> All sessions combined</div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Total Players</div>
+        <div class="kpi-value">{{ summary.total_players }}</div>
+        <div class="kpi-meta"><i data-lucide="users" style="width:12px;height:12px;"></i> Across {{ summary.total_courses }} courses</div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Total Sessions</div>
+        <div class="kpi-value">{{ summary.total_sessions }}</div>
+        <div class="kpi-meta"><i data-lucide="clock" style="width:12px;height:12px;"></i> Recorded gameplay sessions</div>
+    </div>
+</div>
+
+<!-- Emotion Distribution + Heatmap placeholder -->
+<div class="grid-2">
+
+    <!-- Emotion Distribution Chart -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <i data-lucide="heart-pulse" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+                Emotion Distribution
+            </span>
+            <span class="badge badge-blue">All Sessions</span>
+        </div>
+
+        <!-- CSS Bar Chart -->
+        {% set emo_total = emotions | sum(attribute='count') if emotions else 1 %}
         {% for e in emotions %}
-          <div class="row"><div>{{ e.emotion }}</div><div>{{ e.count }}</div></div>
+        {% set pct = ((e.count / emo_total) * 100) | round(1) if emo_total > 0 else 0 %}
+        {% set bar_color =
+            'var(--emo-engaged)' if e.emotion == 'focused' else
+            ('var(--emo-engaged)' if e.emotion == 'engaged' else
+            ('var(--emo-frustrated)' if e.emotion == 'frustrated' else
+            ('var(--emo-confused)' if e.emotion == 'confused' else
+            ('var(--emo-delight)' if e.emotion == 'happy' else
+            'var(--emo-bored)')))) %}
+        <div style="margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                <span style="text-transform: capitalize; font-weight: 500; color: var(--text-primary);">{{ e.emotion }}</span>
+                <span style="color: var(--text-muted);">{{ e.count }} <span style="color: var(--text-muted);">({{ pct }}%)</span></span>
+            </div>
+            <div style="height: 8px; background-color: var(--border); border-radius: 99px; overflow: hidden;">
+                <div style="width: {{ pct }}%; height: 100%; background-color: {{ bar_color }}; border-radius: 99px; transition: width 0.5s ease;"></div>
+            </div>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 0.9rem;">
+            No emotion data recorded yet.
+        </div>
         {% endfor %}
-      </div>
-    </section>
-  </div>
-{% endblock %}
 
+        <!-- Legend -->
+        {% if emotions %}
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;"><span style="width:10px;height:10px;border-radius:50%;background:var(--emo-engaged);"></span> Focused/Engaged</span>
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;"><span style="width:10px;height:10px;border-radius:50%;background:var(--emo-frustrated);"></span> Frustrated</span>
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;"><span style="width:10px;height:10px;border-radius:50%;background:var(--emo-confused);"></span> Confused</span>
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;"><span style="width:10px;height:10px;border-radius:50%;background:var(--emo-delight);"></span> Delight</span>
+            <span style="display:flex;align-items:center;gap:5px;font-size:0.75rem;"><span style="width:10px;height:10px;border-radius:50%;background:var(--emo-bored);"></span> Bored</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Emotion Heatmap (CSS) -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <i data-lucide="grid-3x3" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+                Question Emotion Heatmap
+            </span>
+            <span class="badge badge-orange">Prototype</span>
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Frustration / Confusion intensity per question
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
+            {% set cells = [
+                (0.9, 'Frustrated'), (0.3, 'Bored'),    (0.5, 'Confused'), (0.1, 'Engaged'), (0.7, 'Frustrated'),
+                (0.2, 'Bored'),     (0.8, 'Confused'),  (0.1, 'Engaged'), (0.6, 'Frustrated'),(0.2, 'Bored'),
+                (0.5, 'Confused'),  (0.3, 'Bored'),      (0.9, 'Frustrated'),(0.1, 'Engaged'),(0.4, 'Confused'),
+                (0.1, 'Engaged'),   (0.7, 'Confused'),  (0.2, 'Bored'),    (0.8, 'Frustrated'),(0.1, 'Engaged')
+            ] %}
+            {% for intensity, label in cells %}
+            {% set r = (255 * intensity) | int %}
+            {% set g = (255 * (1 - intensity)) | int %}
+            <div title="Q{{ loop.index }}: {{ label }}" style="
+                height: 44px;
+                border-radius: 5px;
+                background-color: rgba({{ r }}, {{ g }}, 80, 0.7);
+                display: flex; align-items: center; justify-content: center;
+                font-size: 0.7rem; font-weight: 600; color: white;
+                cursor: default;
+            ">Q{{ loop.index }}</div>
+            {% endfor %}
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; margin-top: 14px; font-size: 0.75rem; color: var(--text-muted);">
+            <span>Low</span>
+            <div style="flex: 1; height: 6px; border-radius: 99px; background: linear-gradient(to right, rgba(0,255,80,0.5), rgba(255,0,80,0.8));"></div>
+            <span>High Frustration</span>
+        </div>
+    </div>
+</div>
+
+<!-- Emotion Raw Table -->
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <span class="card-title">
+            <i data-lucide="table-2" style="width:16px;height:16px;display:inline;margin-right:6px;"></i>
+            Emotion Event Log
+        </span>
+        <span class="badge badge-blue">{{ emotions|length }} categories</span>
+    </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Emotion</th>
+                    <th>Occurrences</th>
+                    <th>Share</th>
+                    <th>Adaptive Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set emo_total = emotions | sum(attribute='count') if emotions else 1 %}
+                {% for e in emotions %}
+                {% set pct = ((e.count / emo_total) * 100) | round(1) if emo_total > 0 else 0 %}
+                <tr>
+                    <td>
+                        {% if e.emotion in ['focused', 'engaged'] %}
+                            <span class="badge badge-green" style="text-transform: capitalize;">{{ e.emotion }}</span>
+                        {% elif e.emotion == 'frustrated' %}
+                            <span class="badge badge-red">{{ e.emotion }}</span>
+                        {% elif e.emotion in ['confused'] %}
+                            <span class="badge badge-orange">{{ e.emotion }}</span>
+                        {% elif e.emotion in ['happy'] %}
+                            <span class="badge badge-purple">{{ e.emotion }}</span>
+                        {% else %}
+                            <span class="badge" style="background: var(--border); color: var(--text-secondary); text-transform: capitalize;">{{ e.emotion }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-weight: 600;">{{ e.count }}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 80px; height: 6px; background: var(--border); border-radius: 99px; overflow: hidden;">
+                                <div style="width: {{ pct }}%; height: 100%; background: var(--accent-base); border-radius: 99px;"></div>
+                            </div>
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">{{ pct }}%</span>
+                        </div>
+                    </td>
+                    <td style="font-size: 0.8rem; color: var(--text-secondary);">
+                        {% if e.emotion == 'frustrated' %}
+                            ↓ Reduce difficulty, trigger NPC hint
+                        {% elif e.emotion == 'bored' %}
+                            ↑ Increase difficulty, skip level
+                        {% elif e.emotion in ['focused', 'engaged'] %}
+                            ✓ Maintain pacing, suppress interruptions
+                        {% elif e.emotion == 'happy' %}
+                            🏆 Reinforce with rewards
+                        {% elif e.emotion == 'confused' %}
+                            💡 Show tutorial overlay
+                        {% else %}
+                            — Monitor trend
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 32px; color: var(--text-muted);">
+                        No emotion events recorded yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

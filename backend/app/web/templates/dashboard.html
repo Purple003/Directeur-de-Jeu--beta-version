@@ -1,50 +1,155 @@
+{% set title = "Dashboard" %}
 {% extends "base.html" %}
-{% block content %}
-  <div class="grid">
-    <section class="card">
-      <h2>Create Course and Generate Quiz</h2>
-      <form class="form" action="/dashboard/create-course" method="post" enctype="multipart/form-data">
-        <label>
-          <span>Subject</span>
-          <input name="subject" placeholder="Math" required />
-        </label>
-        <label>
-          <span>Level</span>
-          <select name="level" required>
-            <option value="Beginner">Beginner</option>
-            <option value="Intermediate">Intermediate</option>
-            <option value="Advanced">Advanced</option>
-          </select>
-        </label>
-        <label>
-          <span>Description</span>
-          <textarea name="description" placeholder="Short course description"></textarea>
-        </label>
-        <label>
-          <span>PDF/DOCX</span>
-          <input type="file" name="file" accept=".pdf,.docx" />
-        </label>
-        <button type="submit" class="btn">Generate</button>
-      </form>
-      <p class="hint">Uses Groq/OpenAI-compatible LLM config from <code>backend/.env</code>.</p>
-    </section>
 
-    <section class="card">
-      <h2>Courses</h2>
-      <div class="table">
-        <div class="row head">
-          <div>ID</div><div>Subject</div><div>Level</div><div>Created</div><div></div>
+{% block content %}
+
+<!-- KPI Row -->
+<div class="grid-4" style="margin-bottom: 24px;">
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Total Players</div>
+        <div class="kpi-value">{{ courses|length if courses else "—" }}</div>
+        <div class="kpi-meta">
+            <i data-lucide="users" style="width: 12px; height: 12px;"></i>
+            Registered accounts
         </div>
-        {% for c in courses %}
-          <div class="row">
-            <div>{{ c.id }}</div>
-            <div>{{ c.subject }}</div>
-            <div><span class="pill">{{ c.level }}</span></div>
-            <div>{{ c.created_at }}</div>
-            <div><a class="link" href="/dashboard/course/{{ c.id }}">Open</a></div>
-          </div>
-        {% endfor %}
-      </div>
-    </section>
-  </div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Overall Accuracy</div>
+        <div class="kpi-value" style="color: var(--status-success);">—</div>
+        <div class="kpi-meta">
+            <i data-lucide="check-circle" style="width: 12px; height: 12px;"></i>
+            Across all sessions
+        </div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Dominant Emotion</div>
+        <div class="kpi-value" style="color: var(--emo-engaged); font-size: 1.4rem;">Engaged</div>
+        <div class="kpi-meta">
+            <i data-lucide="heart-pulse" style="width: 12px; height: 12px;"></i>
+            Last 24 hours
+        </div>
+    </div>
+    <div class="card kpi-card" style="margin-bottom: 0;">
+        <div class="kpi-label">Active Courses</div>
+        <div class="kpi-value">{{ courses|length if courses else 0 }}</div>
+        <div class="kpi-meta">
+            <i data-lucide="book-open" style="width: 12px; height: 12px;"></i>
+            All levels combined
+        </div>
+    </div>
+</div>
+
+<!-- Alerts Panel + Create Course -->
+<div class="grid-2" style="margin-bottom: 0;">
+
+    <!-- Alerts -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <i data-lucide="bell" style="width: 16px; height: 16px; display: inline; margin-right: 6px;"></i>
+                Active Alerts
+            </span>
+            <span class="badge badge-orange">Live</span>
+        </div>
+        <div class="alert alert-error">
+            <i data-lucide="alert-triangle" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+            <span><b>3 students</b> showed sustained frustration on Level 4.</span>
+        </div>
+        <div class="alert alert-warning">
+            <i data-lucide="moon" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+            <span><b>7 players</b> are classified as Bored — difficulty too low.</span>
+        </div>
+        <div style="text-align: center; padding: 20px 0 0; color: var(--text-muted); font-size: 0.85rem;">
+            ✓ No other alerts in the last 30 days.
+        </div>
+    </div>
+
+    <!-- Create Course -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">
+                <i data-lucide="plus-circle" style="width: 16px; height: 16px; display: inline; margin-right: 6px;"></i>
+                New Course
+            </span>
+        </div>
+        <form action="/dashboard/create-course" method="post" enctype="multipart/form-data">
+            <div style="margin-bottom: 14px;">
+                <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">Subject</label>
+                <input name="subject" type="text" placeholder="e.g. Fractions"
+                    style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; outline: none;" required>
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">Level</label>
+                <select name="level" style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; outline: none; background: white;" required>
+                    <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">Description</label>
+                <textarea name="description" rows="2" placeholder="Brief description..." style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; resize: none; outline: none;"></textarea>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">Document (PDF / DOCX)</label>
+                <input type="file" name="file" accept=".pdf,.docx" style="font-size: 0.85rem;">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+                <i data-lucide="wand-2" style="width: 16px; height: 16px;"></i> Generate Course & Quiz
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Courses Table -->
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <span class="card-title">
+            <i data-lucide="book" style="width: 16px; height: 16px; display: inline; margin-right: 6px;"></i>
+            All Courses
+        </span>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">{{ courses|length }} total</span>
+    </div>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Subject</th>
+                    <th>Level</th>
+                    <th>Created</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in courses %}
+                <tr>
+                    <td style="font-family: monospace; color: var(--text-muted); font-size: 0.8rem;">#{{ '%04d' % c.id }}</td>
+                    <td style="font-weight: 500;">{{ c.subject }}</td>
+                    <td>
+                        {% if c.level == "Advanced" %}
+                            <span class="badge badge-purple">{{ c.level }}</span>
+                        {% elif c.level == "Intermediate" %}
+                            <span class="badge badge-blue">{{ c.level }}</span>
+                        {% else %}
+                            <span class="badge badge-green">{{ c.level }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="color: var(--text-muted); font-size: 0.8rem;">{{ c.created_at }}</td>
+                    <td style="text-align: right;">
+                        <a href="/dashboard/course/{{ c.id }}" class="btn" style="padding: 6px 12px; font-size: 0.8rem;">
+                            <i data-lucide="external-link" style="width: 14px; height: 14px;"></i> Open
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        No courses yet. Create your first one above.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 {% endblock %}
