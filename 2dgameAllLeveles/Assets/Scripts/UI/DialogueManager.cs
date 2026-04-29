@@ -24,8 +24,6 @@ public class DialogueManager : MonoBehaviour
 
     // Backend dialogue mode (optional)
     private bool backendMode = false;
-    private int sessionId = 0;
-    private int courseId = 0;
     private bool requestInFlight = false;
     private bool lastSimplify = false;
 
@@ -68,11 +66,9 @@ public class DialogueManager : MonoBehaviour
         Time.timeScale = 0f;
     }
 
-    public void ShowBackendDialogue(int sessionId, int courseId, string fallbackText = "", Action onUnderstoodCallback = null)
+    public void ShowBackendDialogue(string fallbackText = "", Action onUnderstoodCallback = null)
     {
         backendMode = true;
-        this.sessionId = sessionId;
-        this.courseId = courseId;
         fallbackDialogue = string.IsNullOrWhiteSpace(fallbackText) ? "..." : fallbackText;
         onUnderstood = onUnderstoodCallback;
 
@@ -81,6 +77,13 @@ public class DialogueManager : MonoBehaviour
 
         // Start by loading a fresh backend response.
         StartCoroutine(RequestDialogue(simplify: false));
+    }
+
+    public void ResetBackendState()
+    {
+        backendMode = false;
+        requestInFlight = false;
+        lastSimplify = false;
     }
 
     void OnChoice(string choice)
@@ -159,9 +162,19 @@ public class DialogueManager : MonoBehaviour
         string text = "";
         string err = "";
 
+        GameManager gameManager = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+
+        if (gameManager == null || gameManager.GetSessionId() == 0)
+        {
+            Debug.LogError("[DialogueManager] GenerateDialogue blocked: sessionId == 0.");
+            lastDialogue = fallbackDialogue;
+            if (dialogueText != null) dialogueText.text = lastDialogue;
+            SetButtonsInteractable(true);
+            requestInFlight = false;
+            yield break;
+        }
+
         yield return api.GenerateDialogue(
-            sessionId: sessionId,
-            courseId: courseId,
             simplify: simplify,
             onOk: (t) => { ok = true; text = t; },
             onErr: (e) => { ok = false; err = e; }

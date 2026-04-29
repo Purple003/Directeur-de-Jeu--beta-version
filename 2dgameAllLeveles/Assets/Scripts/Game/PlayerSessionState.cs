@@ -16,7 +16,6 @@ public class PlayerSessionState : MonoBehaviour
     public int stars = 0;
 
     [Header("Learning Session")]
-    public int courseId = 1;
     public int sessionId = 0;
 
     [Header("Last Session Results")]
@@ -86,7 +85,6 @@ public class PlayerSessionState : MonoBehaviour
     }
 
     public bool HasValidPlayer() => playerId > 0;
-    public bool HasValidCourse() => courseId > 0;
     public bool HasActiveSession() => sessionId > 0;
 
     /// <summary>
@@ -96,7 +94,6 @@ public class PlayerSessionState : MonoBehaviour
     public bool ValidateIdsForGameplay(out string error)
     {
         if (playerId <= 0) { error = "playerId is missing (<= 0)."; return false; }
-        if (courseId <= 0) { error = "courseId is missing (<= 0)."; return false; }
         error = "";
         return true;
     }

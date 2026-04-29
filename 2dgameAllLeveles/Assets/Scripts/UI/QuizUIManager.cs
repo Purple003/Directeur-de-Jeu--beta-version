@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -31,7 +31,6 @@ public class QuizUIManager : MonoBehaviour
 
     public void ShowQuiz(APIManager.GameQuestion[] questions, Action<bool> callback)
     {
-        // Safety: prevent race conditions / double-open from multiple triggers in the same frame.
         if (isOpen)
         {
             Debug.LogWarning("[QuizUI] ShowQuiz blocked: already open.");
@@ -50,7 +49,6 @@ public class QuizUIManager : MonoBehaviour
             return;
         }
 
-        // IMPORTANT: no random selection. Backend controls which question comes next.
         currentIndex = 0;
         current = questions[0];
         remaining = Mathf.Max(1f, timeLimitSeconds);
@@ -87,7 +85,7 @@ public class QuizUIManager : MonoBehaviour
         {
             int idx = i;
             if (answerButtons[i] == null) continue;
-            var txt = answerButtons[i].GetComponentInChildren<TMP_Text>();
+            TMP_Text txt = answerButtons[i].GetComponentInChildren<TMP_Text>();
             bool has = current.choices != null && idx < current.choices.Length;
             if (txt != null) txt.text = has ? current.choices[idx] : "";
             answerButtons[i].interactable = has;
@@ -108,31 +106,31 @@ public class QuizUIManager : MonoBehaviour
             return;
         }
 
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
-        if (st == null || st.sessionId <= 0)
+        GameManager gameManager = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+        int sessionId = gameManager != null ? gameManager.GetSessionId() : 0;
+        int courseId = gameManager != null ? gameManager.CourseId : 0;
+        if (sessionId <= 0)
         {
             Debug.LogWarning("[QuizUI] SubmitAnswer blocked: session is not initialized (sessionId <= 0).");
             Close(false);
             return;
         }
 
-        // Prevent double-click racing (can send duplicate answers).
         isSubmitting = true;
         SetButtonsInteractable(false);
 
         string selectedLetter = ((char)('A' + idx)).ToString();
         int timeSpentMs = Mathf.Max(0, Mathf.RoundToInt((Time.realtimeSinceStartup - shownAtRealtime) * 1000f));
 
-        // --- MODIFICATION ICI : La Caméra est prioritaire sur les HP ---
-        string em = (emotionCamera != null) ? (emotionCamera.lastEmotion ?? "") : "";
-        float conf = (emotionCamera != null) ? emotionCamera.lastConfidence : 0.0f;
+        string em = emotionCamera != null ? (emotionCamera.lastEmotion ?? "") : "";
+        float conf = emotionCamera != null ? emotionCamera.lastConfidence : 0.0f;
         if (string.IsNullOrEmpty(em))
         {
-            em = (emotionManager != null) ? (emotionManager.LastState ?? "") : "";
-            conf = (emotionManager != null) ? emotionManager.LastConfidence : 0.0f;
+            em = emotionManager != null ? (emotionManager.LastState ?? "") : "";
+            conf = emotionManager != null ? emotionManager.LastConfidence : 0.0f;
         }
-        // -----------------------------------------------------------
 
+        Debug.Log("[SYNC] Using sessionId=" + sessionId + " courseId=" + courseId);
         Debug.Log($"[QuizUI] SubmitAnswer questionId={current.id} selected={selectedLetter} timeMs={timeSpentMs} emotion={em} conf={conf:0.00}");
 
         StartCoroutine(APIManager.Instance.SubmitAnswerForCurrentSession(

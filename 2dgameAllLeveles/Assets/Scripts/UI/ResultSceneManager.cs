@@ -27,13 +27,16 @@ public class ResultSceneManager : MonoBehaviour
 
         float accuracy = (st.lastTotal > 0) ? (100f * st.lastCorrect / Mathf.Max(1, st.lastTotal)) : 0f;
 
+        GameManager gameManager = FindObjectOfType<GameManager>();
+        int courseId = (gameManager != null) ? gameManager.CourseId : 0;
+        
         summaryText.text =
-            $"Course: {st.courseId}\n" +
+            $"Course: {courseId}\n" +
             $"Score: {st.lastFinalScore:0.0}%\n" +
             $"Accuracy: {accuracy:0.0}% ({st.lastCorrect}/{Mathf.Max(1, st.lastTotal)})\n" +
             $"Duration: {st.lastDurationMs} ms\n" +
-            $"XP gained: {st.lastXpGained}\n" +
-            $"Stars gained: {st.lastStarsGained}\n" +
+            $"XP Gained: {st.lastXpGained}\n" +
+            $"Stars Gained: {st.lastStarsGained}\n" +
             $"Next Level: {st.lastNextLevel}\n" +
             $"Recommended difficulty: {st.lastRecommendedDifficulty}\n";
     }

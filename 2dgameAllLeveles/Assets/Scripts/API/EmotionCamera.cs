@@ -22,8 +22,8 @@ public class EmotionCamera : MonoBehaviour
     [NonSerialized] public float lastConfidence = 0f;
 
     // Public read-only accessors for EmotionManager (PascalCase convention).
-    public string LastEmotion    => lastEmotion;
-    public float  LastConfidence => lastConfidence;
+    public string LastEmotion => lastEmotion;
+    public float LastConfidence => lastConfidence;
 
     private WebCamTexture cam;
     private Texture2D snap;
@@ -56,45 +56,40 @@ public class EmotionCamera : MonoBehaviour
 
     void Update()
     {
-        if (!enableCamera)
-        {
-            // Log une seule fois pour ne pas spammer
-            return;
-        }
+        if (!enableCamera) return;
         if (APIManager.EnsureInstance() == null)
         {
-            Debug.Log("[EmotionCamera] BLOQUÉ : APIManager.Instance est null");
+            Debug.Log("[EmotionCamera] BLOCKED: APIManager.Instance is null");
             return;
         }
         if (cam == null || !cam.isPlaying)
         {
-            Debug.Log("[EmotionCamera] BLOQUÉ : webcam null ou pas en lecture (cam=" + (cam != null) + " isPlaying=" + (cam != null ? cam.isPlaying.ToString() : "N/A") + ")");
+            Debug.Log("[EmotionCamera] BLOCKED: webcam unavailable (cam=" + (cam != null) + " isPlaying=" + (cam != null ? cam.isPlaying.ToString() : "N/A") + ")");
             return;
         }
-        if (!cam.didUpdateThisFrame) return; // normal : pas de nouvelle frame ce tick, on attend silencieusement
+        if (!cam.didUpdateThisFrame) return;
 
         float elapsed = Time.unscaledTime - lastSentAt;
-        if (elapsed < sendIntervalSeconds)
+        if (elapsed < sendIntervalSeconds) return;
+
+        GameManager gameManager = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+        int sessionId = gameManager != null ? gameManager.GetSessionId() : 0;
+        int courseId = gameManager != null ? gameManager.CourseId : 0;
+        if (sessionId <= 0)
         {
-            // Ne pas loguer ça chaque frame, mais on peut loguer 1 fois pour confirmer le cooldown
+            int gmId = gameManager != null ? gameManager.GetInstanceID() : 0;
+            Debug.Log("[EmotionCamera] BLOCKED: sessionId == 0. gameManagerInstanceId=" + gmId);
             return;
         }
 
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
-        if (st == null || st.sessionId <= 0)
-        {
-            Debug.Log("[EmotionCamera] BLOQUÉ : sessionId pas encore initialisé (st=" + (st != null) + " sessionId=" + (st != null ? st.sessionId.ToString() : "N/A") + ")");
-            return;
-        }
-
-        Debug.Log("[EmotionCamera] Tentative d'envoi de frame, sessionId=" + st.sessionId + " questionId=" + questionIdContext);
+        Debug.Log("[SYNC] Using sessionId=" + sessionId + " courseId=" + courseId);
+        Debug.Log("[EmotionCamera] Tentative d'envoi de frame, sessionId=" + sessionId + " questionId=" + questionIdContext);
         lastSentAt = Time.unscaledTime;
-        StartCoroutine(SendFrame(st.sessionId, questionIdContext));
+        StartCoroutine(SendFrame(sessionId, questionIdContext));
     }
 
     IEnumerator SendFrame(int sessionId, int questionId)
     {
-        // Grab pixels from camera
         try
         {
             Color32[] pixels = cam.GetPixels32();
@@ -121,17 +116,17 @@ public class EmotionCamera : MonoBehaviour
         using (UnityWebRequest req = UnityWebRequest.Post(url, form))
         {
             yield return req.SendWebRequest();
-            
-            Debug.Log("[EmotionCamera] Code de réponse HTTP : " + req.responseCode);
+
+            Debug.Log("[EmotionCamera] HTTP response code: " + req.responseCode);
 
             if (req.result != UnityWebRequest.Result.Success)
             {
-                Debug.Log("[EmotionCamera] ERREUR RESEAU : " + req.error);
+                Debug.Log("[EmotionCamera] NETWORK ERROR: " + req.error);
                 if (logFailures) Debug.LogWarning("[API] Emotion analyze failed: " + req.responseCode + " " + req.downloadHandler.text);
                 yield break;
             }
 
-            Debug.Log("[EmotionCamera] Texte reçu : " + req.downloadHandler.text);
+            Debug.Log("[EmotionCamera] Response text: " + req.downloadHandler.text);
 
             EmotionState outp = null;
             try { outp = JsonUtility.FromJson<EmotionState>(req.downloadHandler.text); }
@@ -139,16 +134,12 @@ public class EmotionCamera : MonoBehaviour
 
             if (outp != null)
             {
-                // Store the backend-provided gameplay state (calm/engaged/stressed).
                 lastEmotion = outp.state ?? "";
                 lastConfidence = outp.confidence;
             }
-            else
+            else if (logFailures)
             {
-                if (logFailures)
-                {
-                    Debug.LogWarning("[API] Emotion analyze parse error: " + req.downloadHandler.text);
-                }
+                Debug.LogWarning("[API] Emotion analyze parse error: " + req.downloadHandler.text);
             }
         }
     }
@@ -161,13 +152,23 @@ public class EmotionCamera : MonoBehaviour
         }
     }
 
-    public void AnalyzeNow(int sessionId, int questionId)
+    public void AnalyzeNow(int questionId)
     {
         if (!enableCamera) return;
-        if (sessionId <= 0) return;
         if (APIManager.EnsureInstance() == null) return;
 
-        // Ensure camera is initialized even if Start() hasn't run yet.
+        GameManager gameManager = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+        int sessionId = gameManager != null ? gameManager.GetSessionId() : 0;
+        int courseId = gameManager != null ? gameManager.CourseId : 0;
+        if (sessionId <= 0)
+        {
+            int gmId = gameManager != null ? gameManager.GetInstanceID() : 0;
+            Debug.LogError("[EmotionCamera] AnalyzeNow blocked: sessionId == 0. gameManagerInstanceId=" + gmId);
+            return;
+        }
+
+        Debug.Log("[SYNC] Using sessionId=" + sessionId + " courseId=" + courseId);
+
         if (cam == null || snap == null || !cam.isPlaying)
         {
             try
@@ -185,9 +186,6 @@ public class EmotionCamera : MonoBehaviour
         }
 
         questionIdContext = Mathf.Max(0, questionId);
-
-        // Bypass cooldown by calling the existing send coroutine directly.
-        // Set lastSentAt to now to avoid Update() also triggering a send immediately after.
         lastSentAt = Time.unscaledTime;
         StartCoroutine(SendFrame(sessionId, questionIdContext));
     }

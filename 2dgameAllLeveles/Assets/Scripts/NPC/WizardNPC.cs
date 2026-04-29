@@ -31,8 +31,9 @@ public class WizardNPC : MonoBehaviour
             if (dialogueManager == null) dialogueManager = FindObjectOfType<DialogueManager>();
             if (dialogueManager == null) return;
 
-            PlayerSessionState st = PlayerSessionState.EnsureInstance();
-            if (st == null || st.sessionId <= 0 || st.courseId <= 0)
+            GameManager gameManager = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+        
+            if (gameManager == null || gameManager.GetSessionId() <= 0 || gameManager.CourseId <= 0)
             {
                 // Session might still be bootstrapping; allow the player to retry.
                 dialogueManager.ShowDialogue("Loading session... please wait and press E again.");
@@ -40,7 +41,7 @@ public class WizardNPC : MonoBehaviour
             }
 
             triggeredOnce = true;
-            dialogueManager.ShowBackendDialogue(st.sessionId, st.courseId, dialogueText);
+            dialogueManager.ShowBackendDialogue(dialogueText);
         }
     }
 

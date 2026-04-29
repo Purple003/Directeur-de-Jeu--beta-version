@@ -6,11 +6,15 @@ using UnityEngine.SceneManagement;
 
 public class GameManager : MonoBehaviour
 {
+    public static GameManager Instance { get; private set; }
+
     [Header("Scene Flow")]
     public string resultSceneName = "ResultScene";
 
     [Header("Session")]
-    public int courseIdOverride = 0; // if 0, use PlayerSessionState.courseId
+    private int courseId = 0;
+    private int sessionId = 0;
+    private bool courseIdLocked = false;
 
     [Header("Quiz")]
     public QuizUIManager quizUI;
@@ -35,21 +39,64 @@ public class GameManager : MonoBehaviour
     private GameObject pendingEnemy = null;
     private Action onEnemyQuizClosed = null;
     private bool gameOverSequenceStarted = false;
+    private bool startSessionCalled = false;
 
     public int CurrentHealth => health;
+    public int CourseId => courseId;
+    public int GetSessionId() => sessionId;
 
     public event Action<int> OnHealthChanged;
     public event Action OnGameOver;
 
+    /// <summary>
+    /// Sets courseId once per session. Immutable after StartSession.
+    /// </summary>
+    public void SetCourseId(int newCourseId)
+    {
+        if (courseIdLocked)
+        {
+            Debug.LogWarning($"[WARNING] courseId mutation blocked. Current: {courseId}, Attempted: {newCourseId}");
+            return;
+        }
+        
+        if (newCourseId <= 0)
+        {
+            Debug.LogError($"[Game] Invalid courseId {newCourseId}. Must be > 0.");
+            return;
+        }
+        
+        courseId = newCourseId;
+        Debug.Log($"[Game] courseId set to {courseId}");
+    }
+
+    /// <summary>
+    /// Locks courseId to prevent further changes during session.
+    /// </summary>
+    private void LockCourseId()
+    {
+        if (courseIdLocked)
+        {
+            Debug.LogWarning($"[Game] courseId already locked to {courseId}");
+            return;
+        }
+        
+        if (courseId <= 0)
+        {
+            Debug.LogError("[Game] Cannot lock invalid courseId (<= 0)");
+            return;
+        }
+        
+        courseIdLocked = true;
+        Debug.Log($"[Game] courseId LOCKED = {courseId}");
+    }
+
     public bool IsReadyForQuiz()
     {
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
         return bootstrapped
             && !bootstrapping
             && !endingSession
             && !quizOpen
-            && st != null
-            && st.sessionId > 0
+            && GetSessionId() > 0
             && APIManager.Instance != null;
     }
 
@@ -59,18 +106,63 @@ public class GameManager : MonoBehaviour
     private int sessionXpGained = 0;
     private int sessionStarsGained = 0;
 
+    void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Debug.LogWarning($"[SYNC] Duplicate GameManager detected. Keeping instance {Instance.GetInstanceID()} and destroying {GetInstanceID()}");
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        Debug.Log($"[SYNC] GameManager assigned instanceId={GetInstanceID()} and marked DontDestroyOnLoad");
+        LogRuntimeState("Awake");
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
     void Start()
     {
         health = Mathf.Max(1, startingHealth);
         if (enemyManager == null) enemyManager = FindObjectOfType<EnemyManager>();
         UpdateHUD();
         OnHealthChanged?.Invoke(health);
-        StartCoroutine(BootstrapSession());
+        LogRuntimeState("Start");
+        // NOTE: Do not auto-start session here. Session must begin AFTER course selection.
+        if (!startSessionCalled && GetSessionId() <= 0)
+        {
+            Debug.Log("[SYNC] Session not started automatically. Waiting for explicit StartSession() call after course selection.");
+        }
+        else
+        {
+            bootstrapped = GetSessionId() > 0;
+            Debug.Log($"[SYNC] Reusing persistent GameManager sessionId={GetSessionId()} startSessionCalled={startSessionCalled}");
+        }
     }
 
     IEnumerator BootstrapSession()
     {
         if (bootstrapping) yield break;
+        if (startSessionCalled)
+        {
+            Debug.Log($"[SYNC] BootstrapSession skipped: startSessionCalled=true sessionId={GetSessionId()}");
+            bootstrapped = GetSessionId() > 0;
+            yield break;
+        }
+        if (GetSessionId() > 0)
+        {
+            Debug.Log($"[SYNC] BootstrapSession skipped: existing sessionId={GetSessionId()}");
+            // session already active; ensure startSessionCalled reflects that state (SetActiveSessionId normally does this)
+            startSessionCalled = true;
+            bootstrapped = true;
+            yield break;
+        }
         bootstrapping = true;
 
         PlayerSessionState st = PlayerSessionState.EnsureInstance();
@@ -93,33 +185,56 @@ public class GameManager : MonoBehaviour
             yield break;
         }
 
-        int courseId = courseIdOverride > 0 ? courseIdOverride : st.courseId;
-        if (courseId <= 0) courseId = 1;
-        st.courseId = courseId;
+        // Validate courseId is set (should be set by CourseMenuManager)
+        if (courseId <= 0)
+        {
+            Debug.LogError("[Game] courseId not set. Go back to menu and select a course.");
+            bootstrapping = false;
+            yield break;
+        }
 
-        Debug.Log($"[Game] Bootstrap playerId={st.playerId} courseId={st.courseId} sessionId={st.sessionId}");
+        LogRuntimeState("BootstrapSession before StartSession");
 
         bool ok = false;
         string err = "";
 
-        // Start session
+        // Start session (bootstrapping prevents concurrent attempts)
+        LogRuntimeState("BootstrapSession: invoking StartSession");
         yield return APIManager.Instance.StartSession(
             st.playerId,
-            st.courseId,
-            (sid) => { st.sessionId = sid; ok = true; },
+            courseId,
+            (sid) => { 
+                SetActiveSessionId(sid);
+                LockCourseId(); // Lock courseId for this session
+                ok = true; 
+            },
             (e) => { ok = false; err = e; }
         );
         if (!ok)
         {
             Debug.LogError("[Game] StartSession failed: " + err);
+            startSessionCalled = false;
             bootstrapping = false;
             yield break;
         }
 
+        Debug.Log($"[Game] Session STARTED with courseId {courseId}");
+        LogRuntimeState("BootstrapSession after StartSession success");
+        
         // Backend controls question selection per quiz trigger.
         bootstrapped = true;
         UpdateHUD();
         bootstrapping = false;
+    }
+
+    /// <summary>
+    /// Public wrapper to start a session. Can be yielded by callers (e.g. CourseMenuManager).
+    /// Returns after bootstrap completes (success or failure). Caller may inspect GetSessionId() / startSessionCalled.
+    /// </summary>
+    public IEnumerator StartSession()
+    {
+        // Delegate to existing bootstrap logic; BootstrapSession already guards against concurrent calls.
+        yield return BootstrapSession();
     }
 
     public void TriggerQuiz()
@@ -170,8 +285,8 @@ public class GameManager : MonoBehaviour
         if (quizOpen) yield break;
         quizOpen = true;
 
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
-        if (st == null || st.sessionId <= 0 || APIManager.Instance == null)
+        int activeSessionId = GetSessionId();
+        if (activeSessionId <= 0 || APIManager.Instance == null)
         {
             quizOpen = false;
             yield break;
@@ -181,8 +296,8 @@ public class GameManager : MonoBehaviour
         string err = "";
         APIManager.GameQuestion q = null;
 
+        Debug.Log($"[SYNC] Using sessionId={activeSessionId} courseId={courseId}");
         yield return APIManager.Instance.GetNextQuestion(
-            st.sessionId,
             (qq) => { q = qq; ok = true; },
             (e) => { ok = false; err = e; }
         );
@@ -335,14 +450,14 @@ public class GameManager : MonoBehaviour
         st.lastXpGained = sessionXpGained;
         st.lastStarsGained = sessionStarsGained;
 
-        Debug.Log($"[Game] EndSession start playerId={st.playerId} courseId={st.courseId} sessionId={st.sessionId} correct={correctCount} total={totalAnswered}");
+        int activeSessionId = GetSessionId();
+        Debug.Log($"[Game] EndSession start playerId={st.playerId} courseId={courseId} sessionId={activeSessionId} correct={correctCount} total={totalAnswered}");
 
-        if (st.sessionId > 0)
+        if (activeSessionId > 0)
         {
             bool ok = false;
             string err = "";
             yield return APIManager.Instance.EndSession(
-                st.sessionId,
                 (data) =>
                 {
                     ok = true;
@@ -363,9 +478,6 @@ public class GameManager : MonoBehaviour
             Debug.LogWarning("[Game] EndSession skipped: sessionId is missing (0).");
         }
 
-        // Clear current session id so we don't accidentally reuse it.
-        st.sessionId = 0;
-
         SceneManager.LoadScene(resultSceneName);
         endingSession = false;
     }
@@ -380,5 +492,71 @@ public class GameManager : MonoBehaviour
             string p = (st != null && st.playerId > 0) ? $"Player {st.playerId} L{st.gameLevel} XP {st.xp} Stars {st.stars}" : "No player";
             hudText.text = p + $"\nQuiz: {correctCount}/{totalAnswered}  +XP {sessionXpGained}";
         }
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        // Reset scene-local references while keeping session state intact.
+        ResetActiveSessionReferences();
+        LogRuntimeState($"SceneLoaded mode={mode}");
+    }
+
+    private void LogRuntimeState(string context)
+    {
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        string sceneName = SceneManager.GetActiveScene().name;
+        int playerIdValue = st != null ? st.playerId : 0;
+        int sessionIdValue = GetSessionId();
+        Debug.Log(
+            $"[GameState] {context} | " +
+            $"playerId={playerIdValue} | " +
+            $"courseId={courseId} | " +
+            $"sessionId={sessionIdValue} | " +
+            $"gameManagerInstanceId={GetInstanceID()} | " +
+            $"sceneName={sceneName} | " +
+            $"startSessionCalled={startSessionCalled}"
+        );
+    }
+
+    private void SetActiveSessionId(int newSessionId)
+    {
+        if (newSessionId <= 0)
+        {
+            Debug.LogWarning($"[SYNC] Ignoring invalid sessionId assignment: {newSessionId}");
+            return;
+        }
+
+        if (sessionId > 0 && sessionId != newSessionId)
+        {
+            Debug.LogWarning($"[SYNC] Session already assigned ({sessionId}); ignoring reassignment to {newSessionId}");
+            return;
+        }
+
+        sessionId = newSessionId;
+        PlayerSessionState st = PlayerSessionState.EnsureInstance();
+        if (st != null) st.sessionId = sessionId;
+        startSessionCalled = true;
+        Debug.Log($"[SYNC] GameManager sessionId updated to {sessionId} for courseId={courseId}");
+    }
+
+    private void ResetActiveSessionReferences()
+    {
+        DialogueManager dialogueManager = FindObjectOfType<DialogueManager>();
+        if (dialogueManager != null) dialogueManager.ResetBackendState();
+        // Rebind common scene-local references that may have been lost on scene load.
+        EnemyManager em = FindObjectOfType<EnemyManager>();
+        if (em != null) enemyManager = em;
+
+        QuizUIManager qm = FindObjectOfType<QuizUIManager>();
+        if (qm != null) quizUI = qm;
+
+        TMP_Text[] texts = FindObjectsOfType<TMP_Text>();
+        foreach (var t in texts)
+        {
+            if (t.name == "HUDText" || t.name.ToLower().Contains("hud")) hudText = t;
+            if (t.name == "HealthText" || t.name.ToLower().Contains("health")) healthText = t;
+        }
+
+        Debug.Log($"[SYNC] Reset scene references. sessionId remains {sessionId} | enemyManager={(enemyManager!=null)} quizUI={(quizUI!=null)} hudText={(hudText!=null)} healthText={(healthText!=null)}");
     }
 }

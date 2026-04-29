@@ -183,6 +183,60 @@ public class APIManager : MonoBehaviour
         }
     }
 
+    public IEnumerator GetCourses(Action<CourseSummary[]> onOk, Action<string> onErr)
+    {
+        string url = baseURL + "/courses";
+        using (UnityWebRequest req = UnityWebRequest.Get(url))
+        {
+            SetAuth(req);
+            if (debugLogging) Debug.Log($"[API] GetCourses url={url}");
+            yield return req.SendWebRequest();
+
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                string body = req.downloadHandler != null ? req.downloadHandler.text : "";
+                if (debugLogging)
+                {
+                    string preview = body.Length > 2000 ? body.Substring(0, 2000) + "..." : body;
+                    Debug.LogWarning($"[API] GetCourses failed status={req.responseCode} error={req.error} rawResponse={preview}");
+                }
+
+                if (req.responseCode == 404)
+                {
+                    onErr?.Invoke("GET /courses returned 404 Not Found.");
+                    yield break;
+                }
+
+                onErr?.Invoke($"HTTP {req.responseCode}: {ExtractErrorMessage(body)}");
+                yield break;
+            }
+
+            string raw = req.downloadHandler != null ? (req.downloadHandler.text ?? "") : "";
+            if (debugLogging)
+            {
+                string preview = raw.Length > 2000 ? raw.Substring(0, 2000) + "..." : raw;
+                Debug.Log($"[API] GetCourses rawResponse={preview}");
+            }
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                onErr?.Invoke("GET /courses returned an empty response body.");
+                yield break;
+            }
+
+            CourseSummary[] courses = ParseCoursesResponse(raw);
+            if (courses == null || courses.Length == 0)
+            {
+                if (debugLogging) Debug.LogWarning("[API] GetCourses parsedData=(empty)");
+                onErr?.Invoke("No courses returned by /courses.");
+                yield break;
+            }
+
+            if (debugLogging) Debug.Log($"[API] GetCourses parsedData count={courses.Length} items={FormatCoursesForLog(courses)}");
+            onOk?.Invoke(courses);
+        }
+    }
+
     public IEnumerator StartSession(int playerId, int courseId, Action<int> onOk, Action<string> onErr)
     {
         string url = baseURL + "/game/start-session";
@@ -287,11 +341,11 @@ public class APIManager : MonoBehaviour
     /// Server-controlled adaptive selection of the next question for a session.
     /// IMPORTANT: Unity must not pick questions randomly.
     /// </summary>
-    public IEnumerator GetNextQuestion(int sessionId, Action<GameQuestion> onOk, Action<string> onErr)
+    public IEnumerator GetNextQuestion(Action<GameQuestion> onOk, Action<string> onErr)
     {
-        if (sessionId <= 0)
+        if (!TryGetGameSyncContext("GetNextQuestion", out _, out int sessionId, out _, out string syncError))
         {
-            onErr?.Invoke("GetNextQuestion blocked: session_id is missing (<= 0).");
+            onErr?.Invoke(syncError);
             yield break;
         }
 
@@ -409,16 +463,9 @@ public class APIManager : MonoBehaviour
         Action<string> onErr
     )
     {
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
-        if (st == null)
+        if (!TryGetGameSyncContext("SubmitAnswer", out _, out int sessionId, out int courseId, out string syncError))
         {
-            onErr?.Invoke("SubmitAnswer blocked: PlayerSessionState missing.");
-            yield break;
-        }
-
-        if (!st.ValidateSessionIds(out string idErr))
-        {
-            onErr?.Invoke("SubmitAnswer blocked: " + idErr);
+            onErr?.Invoke(syncError);
             yield break;
         }
 
@@ -436,7 +483,7 @@ public class APIManager : MonoBehaviour
 
         SubmitAnswerRequest payload = new SubmitAnswerRequest
         {
-            session_id = st.sessionId,
+            session_id = sessionId,
             question_id = questionId,
             selected_answer = selectedAnswer.Trim(),
             time_spent_ms = Mathf.Max(0, timeSpentMs),
@@ -447,20 +494,20 @@ public class APIManager : MonoBehaviour
         if (debugLogging)
         {
             Debug.Log(
-                $"[API] SubmitAnswer(sessionId={payload.session_id}, questionId={payload.question_id}, selected={payload.selected_answer}, timeMs={payload.time_spent_ms}, emotion={payload.emotion}, conf={payload.confidence:0.00})"
+                $"[API] SubmitAnswer(sessionId={payload.session_id}, courseId={courseId}, questionId={payload.question_id}, selected={payload.selected_answer}, timeMs={payload.time_spent_ms}, emotion={payload.emotion}, conf={payload.confidence:0.00})"
             );
         }
 
         yield return SubmitAnswer(payload, onOk, onErr);
     }
 
-    public IEnumerator EndSession(int sessionId, Action<EndSessionData> onOk, Action<string> onErr)
+    public IEnumerator EndSession(Action<EndSessionData> onOk, Action<string> onErr)
     {
         string url = baseURL + "/game/end-session";
         // Backend computes final_score automatically.
-        if (sessionId <= 0)
+        if (!TryGetGameSyncContext("EndSession", out _, out int sessionId, out _, out string syncError))
         {
-            onErr?.Invoke("EndSession blocked: session_id is missing (session not initialized).");
+            onErr?.Invoke(syncError);
             yield break;
         }
 
@@ -546,11 +593,11 @@ public class APIManager : MonoBehaviour
     /// Calls POST /emotion/analyze (simple state endpoint).
     /// Response is NOT enveloped: { "state": "...", "confidence": 0..1 }.
     /// </summary>
-    public IEnumerator PostEmotionHint(int sessionId, string emotionHint, bool store, Action<string, float> onOk, Action<string> onErr)
+    public IEnumerator PostEmotionHint(string emotionHint, bool store, Action<string, float> onOk, Action<string> onErr)
     {
-        if (sessionId <= 0)
+        if (!TryGetGameSyncContext("PostEmotionHint", out _, out int sessionId, out _, out string syncError))
         {
-            onErr?.Invoke("PostEmotionHint blocked: sessionId is missing (<= 0).");
+            onErr?.Invoke(syncError);
             yield break;
         }
 
@@ -586,11 +633,11 @@ public class APIManager : MonoBehaviour
         }
     }
 
-    public IEnumerator GenerateDialogue(int sessionId, int courseId, bool simplify, Action<string> onOk, Action<string> onErr)
+    public IEnumerator GenerateDialogue(bool simplify, Action<string> onOk, Action<string> onErr)
     {
-        if (sessionId <= 0)
+        if (!TryGetGameSyncContext("GenerateDialogue", out _, out int sessionId, out int courseId, out string syncError))
         {
-            onErr?.Invoke("GenerateDialogue blocked: sessionId is missing (<= 0).");
+            onErr?.Invoke(syncError);
             yield break;
         }
         if (courseId <= 0)
@@ -666,6 +713,16 @@ public class APIManager : MonoBehaviour
         public int stars;
     }
     [Serializable] public class ApiEnvelopePlayerProfile { public bool success; public PlayerProfile data; public ApiError error; }
+
+    [Serializable] public class CourseSummary
+    {
+        public int id;
+        public string name;
+    }
+    [Serializable] public class CoursesData { public CourseSummary[] courses; }
+    [Serializable] public class ApiEnvelopeCoursesArray { public bool success; public CourseSummary[] data; public ApiError error; }
+    [Serializable] public class ApiEnvelopeCoursesObject { public bool success; public CoursesData data; public ApiError error; }
+    [Serializable] public class CoursesArrayWrapper { public CourseSummary[] courses; }
 
     [Serializable] public class StartSessionRequest { public int player_id; public int course_id; }
     [Serializable] public class StartSessionData { public string message; public int session_id; }
@@ -753,5 +810,90 @@ public class APIManager : MonoBehaviour
     {
         if (s == null) return "";
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
+    static CourseSummary[] ParseCoursesResponse(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        try
+        {
+            ApiEnvelopeCoursesArray envArray = JsonUtility.FromJson<ApiEnvelopeCoursesArray>(raw);
+            if (envArray != null && envArray.success && envArray.data != null && envArray.data.Length > 0)
+            {
+                return envArray.data;
+            }
+        }
+        catch { }
+
+        try
+        {
+            ApiEnvelopeCoursesObject envObject = JsonUtility.FromJson<ApiEnvelopeCoursesObject>(raw);
+            if (envObject != null && envObject.success && envObject.data != null && envObject.data.courses != null && envObject.data.courses.Length > 0)
+            {
+                return envObject.data.courses;
+            }
+        }
+        catch { }
+
+        string trimmed = raw.TrimStart();
+        if (trimmed.StartsWith("["))
+        {
+            try
+            {
+                CoursesArrayWrapper wrapped = JsonUtility.FromJson<CoursesArrayWrapper>("{\"courses\":" + raw + "}");
+                if (wrapped != null && wrapped.courses != null && wrapped.courses.Length > 0)
+                {
+                    return wrapped.courses;
+                }
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    static string FormatCoursesForLog(CourseSummary[] courses)
+    {
+        if (courses == null || courses.Length == 0) return "[]";
+
+        StringBuilder sb = new StringBuilder();
+        sb.Append("[");
+        for (int i = 0; i < courses.Length; i++)
+        {
+            CourseSummary c = courses[i];
+            if (i > 0) sb.Append(", ");
+            if (c == null) sb.Append("{null}");
+            else sb.Append("{id=").Append(c.id).Append(", name=").Append(c.name).Append("}");
+        }
+        sb.Append("]");
+        return sb.ToString();
+    }
+
+    bool TryGetGameSyncContext(string apiName, out GameManager gameManager, out int sessionId, out int courseId, out string error)
+    {
+        gameManager = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+        sessionId = 0;
+        courseId = 0;
+        error = "";
+
+        if (gameManager == null)
+        {
+            error = apiName + " blocked: GameManager instance is missing.";
+            return false;
+        }
+
+        sessionId = gameManager.GetSessionId();
+        courseId = gameManager.CourseId;
+        Debug.Log("[SYNC] Using sessionId=" + sessionId + " courseId=" + courseId);
+
+        if (sessionId == 0)
+        {
+            error = apiName + " blocked: sessionId is missing (== 0).";
+            Debug.LogWarning($"[SYNC] {apiName} blocked because sessionId==0. GameManager instanceId={(gameManager!=null?gameManager.GetInstanceID():0)}");
+            return false;
+        }
+
+        return true;
     }
 }

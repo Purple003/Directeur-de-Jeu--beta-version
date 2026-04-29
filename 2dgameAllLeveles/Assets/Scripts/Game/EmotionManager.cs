@@ -28,8 +28,8 @@ public class EmotionManager : MonoBehaviour
         if (!enable) return;
         if (APIManager.EnsureInstance() == null) return;
 
-        PlayerSessionState st = PlayerSessionState.EnsureInstance();
-        if (st == null || st.sessionId <= 0) return;
+        GameManager gmForSession = GameManager.Instance != null ? GameManager.Instance : FindObjectOfType<GameManager>();
+        if (gmForSession == null || gmForSession.GetSessionId() <= 0) return;
 
         if (Time.unscaledTime - lastSentAt < Mathf.Max(5f, intervalSeconds)) return;
         lastSentAt = Time.unscaledTime;
@@ -60,7 +60,7 @@ public class EmotionManager : MonoBehaviour
         // CASE 2 : Pas de caméra ou caméra désactivée → fallback hint uniquement.
         string hint = PickHint();
         Debug.Log("[EmotionManager] Pas de caméra active → fallback hint = '" + hint + "'");
-        StartCoroutine(SendHint(st.sessionId, hint));
+        StartCoroutine(SendHint(hint));
     }
 
     string PickHint()
@@ -75,7 +75,7 @@ public class EmotionManager : MonoBehaviour
         return "neutral";
     }
 
-    IEnumerator SendHint(int sessionId, string hint)
+    IEnumerator SendHint(string hint)
     {
         bool ok = false;
         string state = lastState;
@@ -83,7 +83,6 @@ public class EmotionManager : MonoBehaviour
         string err = "";
 
         yield return APIManager.Instance.PostEmotionHint(
-            sessionId: sessionId,
             emotionHint: hint,
             store: storeToBackend,
             onOk: (s, c) => { ok = true; state = s; conf = c; },
