@@ -26,7 +26,7 @@ class GameServiceError(Exception):
 
 def start_session(db: Session, *, player_id: int, course_id: int) -> GameSession:
     try:
-        session = GameSession(player_id=player_id, course_id=course_id)
+        session = GameSession(player_id=player_id, course_id=course_id, used_question_ids=[])
         db.add(session)
         db.commit()
         db.refresh(session)
@@ -79,6 +79,10 @@ def submit_answer(
         is_correct = _is_correct_answer(question, selected_answer)
         course_id = int(session.course_id)
         player_id = int(session.player_id)
+        used_question_ids = list(getattr(session, "used_question_ids", None) or [])
+        if int(question_id) not in used_question_ids:
+            used_question_ids.append(int(question_id))
+            session.used_question_ids = used_question_ids
 
         try:
             # 1) Critical: store the answer. This must succeed for gameplay.

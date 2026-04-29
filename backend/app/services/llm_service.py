@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 import logging
 import os
@@ -22,6 +23,13 @@ class LLMServiceError(Exception):
 
 class LLMConfigError(LLMServiceError):
     """Raised when server-side LLM configuration is missing/invalid."""
+
+
+@dataclass(frozen=True)
+class AdaptedQuestionContent:
+    adapted_question_text: str
+    hint: str | None
+    tone: str
 
 
 def generate_mcq_questions(
@@ -164,6 +172,83 @@ def generate_wizard_dialogue(
     return out
 
 
+def adapt_question_presentation(
+    *,
+    question_text: str,
+    difficulty_level: str,
+    user_emotion: str | None,
+    last_performance: dict[str, Any] | None = None,
+) -> AdaptedQuestionContent:
+    """
+    Adapts presentation only:
+    - keeps the DB question as the canonical source
+    - never changes answer options or correct-answer logic
+    - only tunes phrasing, hinting, and tone
+    """
+    _load_env_once()
+    llm_url, llm_model, llm_api_key = _get_llm_config()
+
+    safe_question = (question_text or "").strip()
+    if not safe_question:
+        raise LLMServiceError("Question text is empty.")
+
+    safe_diff = (difficulty_level or "medium").strip().lower() or "medium"
+    perf = last_performance or {}
+    safe_emotion = (user_emotion or "").strip().lower() or "neutral"
+
+    if not llm_api_key:
+        return _fallback_adapted_question(
+            question_text=safe_question,
+            difficulty_level=safe_diff,
+            user_emotion=safe_emotion,
+            last_performance=perf,
+        )
+
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {llm_api_key}",
+    }
+
+    payload: dict[str, Any] = {
+        "model": llm_model,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _build_question_adaptation_prompt(
+                    question_text=safe_question,
+                    difficulty_level=safe_diff,
+                    user_emotion=safe_emotion,
+                    last_performance=perf,
+                ),
+            },
+        ],
+    }
+
+    content = _call_llm(llm_url=llm_url, headers=headers, payload=payload)
+    try:
+        parsed = _parse_json_content_strict(content)
+    except Exception as exc:
+        raise LLMServiceError("Question adaptation output invalid JSON.") from exc
+
+    adapted_question_text = str(parsed.get("adapted_question_text") or "").strip()
+    hint_raw = parsed.get("hint")
+    tone = str(parsed.get("tone") or "").strip().lower()
+
+    if not adapted_question_text:
+        raise LLMServiceError("Question adaptation missing adapted_question_text.")
+    if tone not in ("easy", "encouraging", "challenging"):
+        raise LLMServiceError("Question adaptation returned invalid tone.")
+
+    hint = str(hint_raw).strip() if hint_raw not in (None, "") else None
+    return AdaptedQuestionContent(
+        adapted_question_text=adapted_question_text,
+        hint=hint,
+        tone=tone,
+    )
+
+
 def _call_llm(*, llm_url: str, headers: dict[str, str], payload: dict[str, Any]) -> str:
     try:
         response = requests.post(llm_url, headers=headers, json=payload, timeout=90)
@@ -298,6 +383,56 @@ Rules:
 """
 
 
+def _build_question_adaptation_prompt(
+    *,
+    question_text: str,
+    difficulty_level: str,
+    user_emotion: str,
+    last_performance: dict[str, Any],
+) -> str:
+    accuracy = float(last_performance.get("accuracy") or 0.0)
+    avg_time_ms = last_performance.get("avg_time_ms")
+    recent_correct = int(last_performance.get("recent_correct") or 0)
+    recent_total = int(last_performance.get("recent_total") or 0)
+
+    return f"""Adapt the presentation of this existing educational multiple-choice question.
+
+Important constraints:
+- Do NOT create a new question.
+- Do NOT change the factual target of the question.
+- Do NOT change the answer choices.
+- Do NOT change which answer is correct.
+- You may only rephrase the question text for clarity, and optionally add a hint.
+
+Inputs:
+- original_question_text: {question_text}
+- difficulty_level: {difficulty_level}
+- user_emotion: {user_emotion}
+- recent_accuracy: {accuracy:.3f}
+- recent_avg_time_ms: {avg_time_ms}
+- recent_correct_answers: {recent_correct}
+- recent_total_answers: {recent_total}
+
+Return ONLY valid JSON with this exact shape:
+{{
+  "adapted_question_text": "rephrased question that preserves the same answer logic",
+  "hint": "optional short hint or null",
+  "tone": "easy"
+}}
+
+Rules for tone:
+- "easy" for reassuring, extra-clear wording
+- "encouraging" for supportive neutral wording
+- "challenging" for concise, confident wording
+
+Rules for hint:
+- Keep it optional and short
+- Never reveal the correct answer
+- Never mention option letters
+
+No markdown. No code fences. No extra text."""
+
+
 def _fallback_wizard_dialogue(*, subject: str, level: str, description: str, simplify: bool) -> str:
     if simplify:
         base = f"Hello! Today we learn {subject}."
@@ -315,6 +450,34 @@ def _fallback_wizard_dialogue(*, subject: str, level: str, description: str, sim
             d = d[:220].rstrip() + "..."
         base += f" {d}"
     return base + " If you understood, let us begin the quiz enemies!"
+
+
+def _fallback_adapted_question(
+    *,
+    question_text: str,
+    difficulty_level: str,
+    user_emotion: str,
+    last_performance: dict[str, Any],
+) -> AdaptedQuestionContent:
+    accuracy = float(last_performance.get("accuracy") or 0.0)
+    tone = "encouraging"
+    hint: str | None = None
+
+    if difficulty_level == "hard" and accuracy >= 0.75 and user_emotion in ("focused", "engaged", "happy"):
+        tone = "challenging"
+    elif difficulty_level == "easy" or user_emotion in ("frustrated", "stress", "stressed", "confused", "sad"):
+        tone = "easy"
+
+    if tone == "easy":
+        hint = "Take it step by step and look for the key concept in the question."
+    elif tone == "encouraging":
+        hint = "Focus on the main idea before comparing the answer choices."
+
+    return AdaptedQuestionContent(
+        adapted_question_text=question_text,
+        hint=hint,
+        tone=tone,
+    )
 
 
 def _suggest_difficulty(level: str) -> str:

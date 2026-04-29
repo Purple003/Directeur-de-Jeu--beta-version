@@ -3,12 +3,14 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    Index,
     ForeignKey,
     Integer,
     JSON,
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -41,7 +43,10 @@ class Course(Base):
 
 class Question(Base):
     __tablename__ = "questions"
-    __table_args__ = {"schema": DB_SCHEMA}
+    __table_args__ = (
+        Index("ix_questions_course_difficulty_id", "course_id", "difficulty_level", "id"),
+        {"schema": DB_SCHEMA},
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     course_id = Column(
@@ -122,6 +127,7 @@ class GameSession(Base):
     ended_at = Column(DateTime(timezone=True), nullable=True)
     final_score = Column(Float, nullable=True)
     duration_ms = Column(Integer, nullable=True)
+    used_question_ids = Column(JSON, nullable=False, server_default=text("'[]'::json"))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     answers = relationship("Answer", back_populates="session", cascade="all, delete-orphan")

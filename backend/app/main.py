@@ -23,10 +23,12 @@ from .database import (
     ensure_phase4_compatibility,
     ensure_phase5_compatibility,
     ensure_phase6_compatibility,
+    ensure_phase7_compatibility,
     ensure_schema,
 )
 from .routes.auth import router as auth_router
 from .routes.dashboard import router as dashboard_router
+from .routes.courses import router as courses_router
 from .routes.player import router as player_router
 from .routes.professor import router as professor_router
 from .routes.questions import router as questions_router
@@ -159,6 +161,7 @@ def on_startup() -> None:
     ensure_phase4_compatibility()
     ensure_phase5_compatibility()
     ensure_phase6_compatibility()
+    ensure_phase7_compatibility()
 
 
 @app.get("/")
@@ -167,6 +170,7 @@ def health_check():
 
 
 app.include_router(professor_router)
+app.include_router(courses_router)
 app.include_router(questions_router)
 app.include_router(player_router)
 app.include_router(game_router)

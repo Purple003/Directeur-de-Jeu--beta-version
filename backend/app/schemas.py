@@ -135,6 +135,8 @@ class GameQuestionItem(BaseModel):
     choices: list[str]
     correct_answer: str
     difficulty_level: str
+    hint: str | None = None
+    tone: str | None = None
 
 
 class GameQuestionsResponse(BaseModel):

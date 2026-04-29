@@ -181,10 +181,12 @@ def get_next_question(session_id: int, db: Session = Depends(get_db)):
         q_item = GameQuestionItem(
             id=q.id,
             course_id=q.course_id,
-            question=q.question,
+            question=decision.adapted_question_text or q.question,
             choices=q.choices_json,
             correct_answer=q.correct_answer,
             difficulty_level=q.difficulty_level,
+            hint=decision.hint,
+            tone=decision.tone,
         )
 
     return ok(

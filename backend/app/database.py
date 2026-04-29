@@ -194,6 +194,41 @@ def ensure_phase6_compatibility() -> None:
         connection.execute(text(f"ALTER TABLE {DB_SCHEMA}.courses ADD COLUMN content_text TEXT"))
 
 
+def ensure_phase7_compatibility() -> None:
+    """
+    Session question-tracking compatibility:
+    - Adds `used_question_ids` to `sessions` if missing.
+    - Adds a composite question lookup index for adaptive selection.
+    """
+    inspector = inspect(engine)
+    try:
+        session_cols = {col["name"] for col in inspector.get_columns("sessions", schema=DB_SCHEMA)}
+    except Exception:
+        session_cols = set()
+
+    stmts: list[str] = []
+    if session_cols and "used_question_ids" not in session_cols:
+        stmts.append(
+            f"ALTER TABLE {DB_SCHEMA}.sessions "
+            "ADD COLUMN used_question_ids JSON NOT NULL DEFAULT '[]'::json"
+        )
+
+    index_stmt = (
+        f"CREATE INDEX IF NOT EXISTS ix_questions_course_difficulty_id "
+        f"ON {DB_SCHEMA}.questions (course_id, difficulty_level, id)"
+    )
+
+    if not stmts:
+        with engine.begin() as connection:
+            connection.execute(text(index_stmt))
+        return
+
+    with engine.begin() as connection:
+        for stmt in stmts:
+            connection.execute(text(stmt))
+        connection.execute(text(index_stmt))
+
+
 def ensure_phase2_compatibility() -> None:
     """
     Lightweight migration for Phase 2 player system.
