@@ -1,0 +1,68 @@
+{% set title = "Edit Course" %}
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card" style="max-width: 760px; margin: 0 auto;">
+    <div class="card-header">
+        <span class="card-title">
+            <i data-lucide="pencil" style="width: 16px; height: 16px; display: inline; margin-right: 6px;"></i>
+            Edit Course #{{ '%04d' % course.id }}
+        </span>
+    </div>
+
+    <form action="/dashboard/course/{{ course.id }}/update" method="post">
+        <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">
+                Subject
+            </label>
+            <input
+                name="subject"
+                type="text"
+                value="{{ course.subject }}"
+                style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; outline: none;"
+                required
+            >
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">
+                Level
+            </label>
+            <select
+                name="level"
+                style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; outline: none; background: white;"
+                required
+            >
+                <option value="Beginner" {% if course.level == "Beginner" %}selected{% endif %}>Beginner</option>
+                <option value="Intermediate" {% if course.level == "Intermediate" %}selected{% endif %}>Intermediate</option>
+                <option value="Advanced" {% if course.level == "Advanced" %}selected{% endif %}>Advanced</option>
+            </select>
+        </div>
+
+        <div style="margin-bottom: 18px;">
+            <label style="display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px;">
+                Description
+            </label>
+            <textarea
+                name="description"
+                rows="5"
+                style="width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.9rem; resize: vertical; outline: none;"
+            >{{ course.description or '' }}</textarea>
+        </div>
+
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary">
+                <i data-lucide="save" style="width: 16px; height: 16px;"></i>
+                Save Changes
+            </button>
+
+            <a href="/dashboard/course/{{ course.id }}" class="btn">
+                <i data-lucide="arrow-left" style="width: 16px; height: 16px;"></i>
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

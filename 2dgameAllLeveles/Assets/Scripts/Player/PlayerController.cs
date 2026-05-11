@@ -3,6 +3,11 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody2D))]
 public class PlayerController : MonoBehaviour
 {
+    private const string AnimStateParam = "AnimState";
+    private const string GroundedParam = "Grounded";
+    private const string JumpParam = "Jump";
+    private const string AirSpeedParam = "AirSpeed";
+
     [Header("Move")]
     public float moveSpeed = 6f;
     public float jumpForce = 12f;
@@ -20,6 +25,7 @@ public class PlayerController : MonoBehaviour
     public LayerMask groundLayer;
 
     private Rigidbody2D rb;
+    private Animator animator;
     private int jumpsLeft;
     private bool isGrounded;
     private Vector3 baseScale;
@@ -28,6 +34,7 @@ public class PlayerController : MonoBehaviour
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        animator = GetComponent<Animator>();
         baseScale = transform.localScale;
     }
 
@@ -53,8 +60,14 @@ public class PlayerController : MonoBehaviour
             rb.velocity = new Vector2(rb.velocity.x, 0f);
             rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
             jumpsLeft--;
+            if (animator != null)
+            {
+                animator.SetTrigger(JumpParam);
+            }
             if (enableJumpSquash) KickJumpSquash();
         }
+
+        UpdateAnimator(x);
     }
 
     void FixedUpdate()
@@ -67,6 +80,17 @@ public class PlayerController : MonoBehaviour
                 jumpsLeft = maxJumps;
             }
         }
+    }
+
+    void UpdateAnimator(float horizontalInput)
+    {
+        if (animator == null) return;
+
+        animator.SetBool(GroundedParam, isGrounded);
+        animator.SetFloat(AirSpeedParam, rb.velocity.y);
+
+        int animState = Mathf.Abs(horizontalInput) > Mathf.Epsilon && isGrounded ? 2 : 0;
+        animator.SetInteger(AnimStateParam, animState);
     }
 
     void KickJumpSquash()

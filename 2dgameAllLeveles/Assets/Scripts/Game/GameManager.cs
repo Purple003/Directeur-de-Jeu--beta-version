@@ -8,6 +8,16 @@ public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
 
+    // Simple difficulty configuration for per-level starting hearts.
+    // This is intentionally lightweight and does not change GameManager
+    // lifecycle or persistence. It only maps a difficulty level to the
+    // existing `startingHealth` value so scene loads and retries can
+    // restore a difficulty-appropriate number of hearts.
+    public enum Difficulty { Easy, Medium, Hard }
+
+    [Header("Difficulty")]
+    public Difficulty currentDifficulty = Difficulty.Medium;
+
     [Header("Scene Flow")]
     public string resultSceneName = "ResultScene";
 
@@ -129,6 +139,13 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
+        // Ensure the configured difficulty value is applied before any
+        // runtime health initialization. This keeps the existing
+        // `startingHealth` field as the authoritative source used
+        // elsewhere in the codebase while allowing difficulty to
+        // control its value in a safe, centralized place.
+        ApplyDifficultyToStartingHealth();
+
         health = Mathf.Max(1, startingHealth);
         if (enemyManager == null) enemyManager = FindObjectOfType<EnemyManager>();
         UpdateHUD();
@@ -316,6 +333,17 @@ public class GameManager : MonoBehaviour
 
         // Show exactly one backend-chosen question (no randomness client-side).
         quizUI.ShowQuiz(new APIManager.GameQuestion[] { q }, OnQuizDone);
+
+        // If this quiz was triggered by an enemy, disable its collider now that
+        // the UI is shown. We disable the collider here (after ShowQuiz) so
+        // physics is already paused by the UI (ShowQuiz sets Time.timeScale=0).
+        // This avoids disabling the collider earlier during the async
+        // GetNextQuestion call (which allowed the enemy to fall through ground).
+        if (pendingEnemy != null)
+        {
+            Collider2D pendCol = pendingEnemy.GetComponent<Collider2D>();
+            if (pendCol != null) pendCol.enabled = false;
+        }
     }
 
     void OnQuizDone(bool isCorrect)
@@ -361,25 +389,15 @@ public class GameManager : MonoBehaviour
     {
         health = Mathf.Max(0, health - Mathf.Max(0, amount));
 
-        if (health <= 0)
-        {
-            // OPTION A: no-fail recovery
-            health = Mathf.Max(1, startingHealth);
-
-            if (enemyManager == null) enemyManager = FindObjectOfType<EnemyManager>();
-
-            // Force adaptation immediately (ignore EmotionManager timing)
-            AdaptationManager ad = null;
-            if (enemyManager != null) ad = enemyManager.adaptation;
-            if (ad == null) ad = FindObjectOfType<AdaptationManager>();
-            if (ad != null) ad.ForceStressed(60f);
-
-            // Remove current enemies for breathing space
-            if (enemyManager != null) enemyManager.ClearAll();
-        }
-
         OnHealthChanged?.Invoke(health);
         UpdateHUD();
+
+        if (health <= 0)
+        {
+            Debug.Log("[Game] Health reached 0 -> ending run immediately.");
+            EndRunToResults();
+            return;
+        }
     }
 
     IEnumerator GameOverSequence()
@@ -498,7 +516,78 @@ public class GameManager : MonoBehaviour
     {
         // Reset scene-local references while keeping session state intact.
         ResetActiveSessionReferences();
-        LogRuntimeState($"SceneLoaded mode={mode}");
+        
+        // Auto-detect difficulty from scene name to sync the enum value with
+        // the level being loaded. This is the minimal fix for the bug where
+        // `SetDifficulty()` is never called explicitly. Scene naming convention:
+        // - "Level*_Easy" => Difficulty.Easy (5 hearts)
+        // - "Level*_Hard" => Difficulty.Hard (2 hearts)
+        // - Everything else (Level1, Level2, GameScene, etc) => Difficulty.Medium (3 hearts)
+        string sceneName = scene.name.ToLower();
+        if (sceneName.Contains("easy"))
+        {
+            currentDifficulty = Difficulty.Easy;
+            Debug.Log($"[GameManager] Scene '{scene.name}' detected as Easy difficulty.");
+        }
+        else if (sceneName.Contains("hard"))
+        {
+            currentDifficulty = Difficulty.Hard;
+            Debug.Log($"[GameManager] Scene '{scene.name}' detected as Hard difficulty.");
+        }
+        else
+        {
+            currentDifficulty = Difficulty.Medium;
+            Debug.Log($"[GameManager] Scene '{scene.name}' detected as Medium difficulty (default).");
+        }
+        
+        // Apply difficulty mapping and restore runtime health to the
+        // configured per-level `startingHealth`. Because GameManager is
+        // persistent across scenes (`DontDestroyOnLoad`), `Start()` will
+        // not run again on reloads — so we re-apply the difficulty here
+        // and reset the runtime `health` for retries/scene loads.
+        ApplyDifficultyToStartingHealth();
+        health = Mathf.Max(1, startingHealth);
+        UpdateHUD();
+        OnHealthChanged?.Invoke(health);
+        LogRuntimeState($"SceneLoaded mode={mode} difficulty={currentDifficulty}");
+    }
+
+    /// <summary>
+    /// Map `currentDifficulty` to the `startingHealth` used throughout
+    /// the existing codebase. This keeps the change minimal: other
+    /// systems continue to read `startingHealth` and runtime `health`.
+    /// </summary>
+    public void ApplyDifficultyToStartingHealth()
+    {
+        int oldHealth = startingHealth;
+        switch (currentDifficulty)
+        {
+            case Difficulty.Easy:
+                startingHealth = 5;
+                break;
+            case Difficulty.Medium:
+                startingHealth = 3;
+                break;
+            case Difficulty.Hard:
+                startingHealth = 2;
+                break;
+            default:
+                startingHealth = 3;
+                break;
+        }
+        Debug.Log($"[GameManager] ApplyDifficultyToStartingHealth: {currentDifficulty} => startingHealth changed from {oldHealth} to {startingHealth}");
+    }
+
+    /// <summary>
+    /// Public setter for difficulty so external systems (menus, level
+    /// selectors) can change difficulty before a level loads. If
+    /// `applyImmediately` is true, `startingHealth` is updated
+    /// immediately so subsequent scene loads will reset to that value.
+    /// </summary>
+    public void SetDifficulty(Difficulty d, bool applyImmediately = true)
+    {
+        currentDifficulty = d;
+        if (applyImmediately) ApplyDifficultyToStartingHealth();
     }
 
     private void LogRuntimeState(string context)

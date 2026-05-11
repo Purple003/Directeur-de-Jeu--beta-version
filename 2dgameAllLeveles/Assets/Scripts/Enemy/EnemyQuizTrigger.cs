@@ -24,7 +24,12 @@ public class EnemyQuizTrigger : MonoBehaviour
         FindObjectOfType<EmotionCamera>()?.AnalyzeNow(0);
 
         inQuiz = true;
-        if (col != null) col.enabled = false; // avoid retrigger while quiz is open
+        // IMPORTANT: keep the collider enabled here. The quiz flow performs an
+        // async backend call (GetNextQuestion). If we disable the collider now
+        // the enemy will lose ground contact and fall while waiting for the
+        // question. The collider will be disabled only once the UI is shown
+        // (see GameManager.OpenNextQuestionQuiz where pendingEnemy collider is
+        // disabled immediately after QuizUIManager.ShowQuiz returns).
 
         gm.TriggerQuizForEnemy(gameObject, () =>
         {

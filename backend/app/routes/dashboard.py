@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -201,6 +202,75 @@ def dashboard_course(course_id: int, request: Request, db: Session = Depends(get
         request,
         "course.html",
         {"course": course},
+    )
+
+
+@router.get("/course/{course_id}/edit", response_class=HTMLResponse)
+def dashboard_edit_course(
+    course_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user=ProfessorOnly,
+):
+    course = _get_owned_course(db, course_id=course_id, professor_id=int(_user.id))
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+    return templates.TemplateResponse(
+        request,
+        "edit_course.html",
+        {"course": course},
+    )
+
+
+@router.post("/course/{course_id}/update", status_code=status.HTTP_303_SEE_OTHER)
+def dashboard_update_course(
+    course_id: int,
+    subject: str = Form(...),
+    level: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    _user=ProfessorOnly,
+):
+    course = _get_owned_course(db, course_id=course_id, professor_id=int(_user.id))
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+    try:
+        course.subject = subject.strip()
+        course.level = level.strip()
+        course.description = description.strip() if description.strip() else None
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Unable to update course right now.") from exc
+
+    return RedirectResponse(
+        url=f"/dashboard/course/{course.id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/course/{course_id}/delete", status_code=status.HTTP_303_SEE_OTHER)
+def dashboard_delete_course(
+    course_id: int,
+    db: Session = Depends(get_db),
+    _user=ProfessorOnly,
+):
+    course = _get_owned_course(db, course_id=course_id, professor_id=int(_user.id))
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+    try:
+        db.delete(course)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Unable to delete course right now.") from exc
+
+    return RedirectResponse(
+        url="/dashboard",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
