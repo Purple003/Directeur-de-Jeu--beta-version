@@ -59,24 +59,57 @@ public class GameManager : MonoBehaviour
     public event Action OnGameOver;
 
     /// <summary>
-    /// Sets courseId once per session. Immutable after StartSession.
+    /// Sets courseId from menu selection. Handles both new course and same-course re-selection.
+    /// Called only from CourseMenuManager.StartGameRoutine() (menu "Play" button).
+    /// 
+    /// Behavior:
+    /// - Different courseId: reset session flags → creates fresh session with new course
+    /// - Same courseId after lock: reset session flags → creates fresh session with same course
+    /// - Retry flow: SetCourseId() NOT called → old session persists naturally
+    /// 
+    /// This allows course switching while preserving retry behavior.
     /// </summary>
     public void SetCourseId(int newCourseId)
     {
-        if (courseIdLocked)
-        {
-            Debug.LogWarning($"[WARNING] courseId mutation blocked. Current: {courseId}, Attempted: {newCourseId}");
-            return;
-        }
-        
         if (newCourseId <= 0)
         {
             Debug.LogError($"[Game] Invalid courseId {newCourseId}. Must be > 0.");
             return;
         }
         
-        courseId = newCourseId;
-        Debug.Log($"[Game] courseId set to {courseId}");
+        // SetCourseId() is called only from menu (CourseMenuManager.Play button).
+        // If the courseId is different OR the session is locked from a previous session,
+        // reset the session state to allow a fresh start.
+        // This fixes the bug where selecting a new course was blocked by courseIdLocked=true.
+        if (newCourseId != courseId || courseIdLocked)
+        {
+            int oldCourseId = courseId;
+            int oldSessionId = sessionId;
+            bool wasLocked = courseIdLocked;
+            bool wasStartCalled = startSessionCalled;
+            
+            courseId = newCourseId;
+            courseIdLocked = false;        // Unlock to allow new session
+            startSessionCalled = false;    // Allow new session creation
+            sessionId = 0;                 // Clear old session ID
+            bootstrapped = false;          // Mark as uninitialized
+            
+            if (newCourseId != oldCourseId)
+            {
+                Debug.Log($"[Game] courseId changed from {oldCourseId} to {newCourseId} (different course selected)");
+            }
+            else
+            {
+                Debug.Log($"[Game] courseId {newCourseId} re-selected from menu (same course, fresh session)");
+            }
+            Debug.Log($"[Game] Session reset: sessionId {oldSessionId}→0, courseIdLocked {wasLocked}→false, startSessionCalled {wasStartCalled}→false, bootstrapped→false");
+        }
+        else
+        {
+            // Same course, not locked (edge case, shouldn't occur in normal flow)
+            courseId = newCourseId;
+            Debug.Log($"[Game] courseId set to {courseId}");
+        }
     }
 
     /// <summary>
