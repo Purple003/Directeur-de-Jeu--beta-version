@@ -104,21 +104,27 @@ Pour chaque diagramme : titre académique, description courte, diagramme en Merm
 Description courte : Cas d'utilisation principaux (Étudiant, Enseignant, LMS/LRS, Administrateur) et interactions avec le système.
 
 ```mermaid
-%% Diagramme de cas d'utilisation du système EduGame WebGL — Intégration LMS
-actor Etudiant as Student
-actor Enseignant as Teacher
-actor LMS as LMS
-actor Admin as Admin
+%% Diagramme de cas d'utilisation (flowchart simplifié pour compatibilité)
+graph LR
+  Student["Étudiant \n(Jeu WebGL)"]
+  Teacher["Enseignant"]
+  LMSNode["LMS / LRS"]
+  Admin["Administrateur"]
 
-rectangle "EduGame WebGL + Backend" {
-  Student --> (Jouer une session)
-  Student --> (Soumettre réponse)
-  (Jouer une session) --> (Créer session côté serveur)
-  (Soumettre réponse) --> (Enregistrer xAPI statement)
-  Teacher --> (Récupérer statements xAPI)
-  LMS --> (Importer statements xAPI)
-  Admin --> (Gérer configurations LRS / API keys)
-}
+  Play["Jouer une session"]
+  Submit["Soumettre réponse"]
+  Store["Enregistrer xAPI statement"]
+  Import["Importer statements xAPI"]
+  Manage["Gérer config LRS / API keys"]
+
+  Student --> Play
+  Student --> Submit
+  Play --> Store
+  Submit --> Store
+  Teacher --> Import
+  LMSNode --> Import
+  Admin --> Manage
+  Store --> LMSNode
 ```
 
 2) **Diagramme du pipeline de déploiement WebGL EduGame — CI/CD et hébergement**
@@ -184,11 +190,11 @@ Description courte : Séquence d'un flux typique depuis le jeu jusqu'à l'ingest
 ```mermaid
 %% Diagramme de workflow d'intégration WebGL dans une plateforme LMS
 sequenceDiagram
-  participant Student as Étudiant (navigateur)
-  participant WebGL as Client Unity WebGL
-  participant API as Backend FastAPI
-  participant DB as PostgreSQL
-  participant LMS as Moodle / LRS
+  participant Student as Student
+  participant WebGL as WebGLClient
+  participant API as BackendAPI
+  participant DB as Database
+  participant LMS as LMS
 
   Student->>WebGL: Lance une session
   WebGL->>API: POST /start_session
