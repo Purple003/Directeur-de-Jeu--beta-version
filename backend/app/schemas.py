@@ -314,3 +314,28 @@ class EmotionAnalyzeResponse(BaseModel):
         default=None, description="Optional FaceMesh geometry (for tuning / debug)"
     )
     deepface_fresh: bool = Field(default=False, description="True if DeepFace ran on this frame (not cached / throttled)")
+
+
+# ============================================================
+# xAPI Statement Retrieval (Moodle/LRS Integration)
+# ============================================================
+
+
+class XAPIStatementResponse(BaseModel):
+    """Single xAPI statement from the database."""
+
+    id: int
+    session_id: int | None = None
+    statement_json: dict = Field(..., description="Full xAPI statement (actor, verb, object, result, context)")
+    sent: bool = Field(..., description="Whether statement was sent to external LRS")
+    created_at: str = Field(..., description="ISO 8601 timestamp when statement was created")
+
+
+class XAPIStatementsResponse(BaseModel):
+    """Paginated list of xAPI statements for LRS/Moodle consumption."""
+
+    statements: list[XAPIStatementResponse] = Field(..., description="List of xAPI statements")
+    count: int = Field(..., ge=0, description="Number of statements in this page")
+    total: int = Field(..., ge=0, description="Total statements matching query filters")
+    limit: int = Field(..., ge=1, le=1000, description="Pagination limit used")
+    offset: int = Field(..., ge=0, description="Pagination offset used")
