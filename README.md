@@ -1,365 +1,402 @@
-# Documentation PFE — Projet EduGame (Adaptatif WebGL + LMS)
+Projet EduFrog — Documentation académique (PFE)
+===============================================
 
-**Version**: 1.0.0  
-**Date**: 12 mai 2026  
-**Statut**: Rédaction pour mémoire / PFE
+Version : 1.0.0
 
----
+Date : 13 mai 2026
 
+Statut : Documentation technique pour mémoire (PFE)
 
-**Résumé**
+------------------------------------------------------------------------
 
-Ce document présente une synthèse académique et technique du projet EduGame, une plateforme d'apprentissage adaptatif composée d'un client Unity 2D exporté en WebGL et d'un backend FastAPI. Le projet enregistre les interactions des apprenants sous forme d'énoncés xAPI, les stocke dans une base PostgreSQL et expose des mécanismes d'intégration avec un LRS ou un LMS (par ex. Moodle).
+1. Titre du projet
+-------------------
 
-Objectif du document : fournir un contenu structuré, technique et immédiatement réutilisable dans un mémoire de fin d'études (PFE), incluant une analyse détaillée des modifications récentes, des diagrammes système à jour et des recommandations d'ingénierie.
+Projet EduFrog — Plateforme d'apprentissage adaptatif (Unity WebGL + FastAPI)
 
----
+------------------------------------------------------------------------
 
-**Table des matières**
+2. Introduction générale
+-------------------------
 
-- Introduction générale
-- Analyse des modifications récentes
-- Diagrammes système (Mermaid)
-- Workflow global et pipeline de déploiement
-- Considérations techniques et recommandations
-- Section démonstration (placeholders)
-- Conclusion
+Ce document présente une analyse complète et strictement factuelle du projet EduFrog telle qu'elle peut être déduite des fichiers présents dans le dépôt. L'objectif est de fournir un point d'appui solide pour la rédaction d'un mémoire de Master / PFE : description technique, architecture, analyse du backend et du frontend, diagrammes académiques pertinents, workflow d'intégration LMS et procédure de déploiement via Netlify.
 
----
+L'analyse a été réalisée par lecture statique du code et des fichiers du workspace ; aucune modification du code source n'a été effectuée.
 
-## 1. Introduction générale
+------------------------------------------------------------------------
 
-Présentation du projet
+3. Contexte du projet
+----------------------
 
-Le projet est composé de deux parties principales : un client Unity 2D (jeu plateforme pédagogique) compilé en WebGL pour distribution web, et un backend Python (FastAPI) assurant l'authentification, la gestion de sessions, la génération et le stockage d'énoncés xAPI, l'orchestration des services d'IA (détection d'émotions et génération d'explications) et l'exposition d'API pour l'ingestion par un LRS ou LMS.
+Résumé fonctionnel
 
-Objectif global
+- Client : jeu pédagogique 2D développé sous Unity (répertoire `2dgameAllLeveles/`).
+- Backend : API REST asynchrone en Python (FastAPI) dans `backend/app/` ; persistance via SQLAlchemy et PostgreSQL.
+- Trace pédagogique : interactions converties en énoncés xAPI (ADL) et stockées dans la table `XAPIStatement`.
+- Authentification : jetons JWT (modules d'auth présents dans `backend/app/services` et `backend/app/routes/auth.py`).
 
-Proposer une expérience d'apprentissage adaptative où :
-- les performances et l'état affectif de l'apprenant influencent la difficulté,  
-- toutes les interactions pédagogiques sont traçables via xAPI,  
-- les données sont exposables aux environnements d'apprentissage (Moodle/LRS) pour reporting et archival.
+Domaine d'application : éducation numérique — intégration au LMS (Moodle) via récupération (pull) d'énoncés xAPI ou ingestion de l'URL du build WebGL.
 
-Contexte technique
+------------------------------------------------------------------------
 
-Client : Unity 2022.3+ export WebGL.  
-Backend : FastAPI, SQLAlchemy, PostgreSQL.  
-Authentification : JWT.  
-xAPI : énoncés ADL compatibles stockés brut en base.  
-Déploiement : client statique (Netlify/S3) et backend conteneurisé.
+4. Architecture globale
+-----------------------
 
----
+Description synthétique
 
-## 2. Analyse des modifications récentes
+L'architecture est composée de trois couches principales :
+- Client WebGL (Unity) : interface de jeu et capteur émotionnel (Webcam).  
+- Backend FastAPI : API REST, services métier, construction et stockage xAPI, envoi optionnel vers LRS externe.  
+- Stockage : PostgreSQL (schéma `adaptive`) et éventuellement Redis pour cache.
 
-Objectif : lister, expliquer et analyser l'impact des changements récents implémentés côté backend.
-
-Modifications identifiées
-
-- Ajout de schémas Pydantic d'exposition : `XAPIStatementResponse` et `XAPIStatementsResponse` (dans `backend/app/schemas.py`).
-- Ajout d'une fonction de service de lecture paginée : `get_xapi_statements(...)` (dans `backend/app/services/analytics_service.py`).
-- Ajout d'un endpoint REST `GET /xapi/statements` (dans `backend/app/routes/analytics.py`) fournissant un point d'accès paginé et filtrable aux énoncés xAPI.
-- Mise en place de garde-fous de pagination (`limit` par défaut 100, `limit` max 1000) et d'offset pour éviter des requêtes massives.
-- Conservation stricte du JSON original `statement_json` : le backend renvoie les énoncés tels qu'enregistrés (aucune transformation automatique).
-
-Ancien workflow vs nouveau workflow
-
-- Ancien : génération et tentative d'envoi (push) vers un LRS externe ; dépendance à la disponibilité du LRS pour l'archivage.
-- Nouveau : ajout d'un point d'accès pull côté backend permettant au LMS/LRS de récupérer directement les énoncés stockés (pagination + filtres). Ainsi, l'intégration peut se faire par ré-ingestion ou extraction directe sans dépendre uniquement du push externe.
-
-
-Impact global
-
-- Avantages : meilleure résilience de l'intégration LMS, facilitation des audits et des exports, et compatibilité simplifiée avec des outils d'analytics (Learning Locker, plugins Moodle).
-- Risques : nécessité de durcir l'accès (authentification et autorisations), protection de la vie privée (PII dans le champ `actor`) et contraintes de performance en cas de gros volumes (indexation, pagination/streaming).
-
-Recommandations immédiates
-
-- Appliquer `Depends(get_current_user)` et vérifier les rôles (enseignant / administrateur) sur l'endpoint `GET /xapi/statements`.
-- Ajouter journalisation (audit) des extractions (utilisateur, token, IP, paramètres de filtrage).
-- Documenter la présence possible de données personnelles dans `actor` et prévoir une option d'anonymisation pour les exports destinés à des tiers.
-
-### 2.1 Inventaire technique des fichiers modifiés récemment
-
-But : permettre une revue de code sans modifier les sources, en listant précisément les fichiers touchés et leur rôle.
-
-- `backend/app/schemas.py` : ajout des schémas Pydantic `XAPIStatementResponse` et `XAPIStatementsResponse` pour formaliser la réponse paginée.
-- `backend/app/services/analytics_service.py` : ajout de `get_xapi_statements(db, session_id=None, player_id=None, limit=100, offset=0)` — requêtes SQLAlchemy sécurisées, filtres optionnels et comptage total.
-- `backend/app/routes/analytics.py` : ajout de l'endpoint `GET /xapi/statements` (paramètres : `session_id`, `player_id`, `limit`, `offset`) ; enveloppe de réponse existante respectée.
-- `backend/app/services/xapi_service.py` : (inchangé ici) responsable de la construction et envoi best-effort des statements vers un LRS externe.
-- `backend/app/models.py` : modèle `XAPIStatement` (id, session_id FK, statement_json JSON, sent bool, created_at timestamp) — utilisé par le service et l'endpoint de lecture.
-
-Remarque : cette documentation a été réalisée par lecture et analyse statique des fichiers listés ; aucun code n'a été modifié hors du `README.md`.
-
----
-
----
-
-## 3. Diagrammes système (REFONTE COMPLÈTE)
-
-Pour chaque diagramme : titre académique, description courte, diagramme en Mermaid.
-
-1) **Diagramme de cas d’utilisation du système EduGame WebGL — Intégration LMS**
-
-Description courte : Cas d'utilisation principaux (Étudiant, Enseignant, LMS/LRS, Administrateur) et interactions avec le système.
+Diagramme de l'architecture globale
 
 ```mermaid
-%% Diagramme de cas d'utilisation (flowchart simplifié pour compatibilité)
-graph LR
-  Student["Étudiant \n(Jeu WebGL)"]
-  Teacher["Enseignant"]
-  LMSNode["LMS / LRS"]
-  Admin["Administrateur"]
-
-  Play["Jouer une session"]
-  Submit["Soumettre réponse"]
-  Store["Enregistrer xAPI statement"]
-  Import["Importer statements xAPI"]
-  Manage["Gérer config LRS / API keys"]
-
-  Student --> Play
-  Student --> Submit
-  Play --> Store
-  Submit --> Store
-  Teacher --> Import
-  LMSNode --> Import
-  Admin --> Manage
-  Store --> LMSNode
-```
-
-2) **Diagramme du pipeline de déploiement WebGL EduGame — CI/CD et hébergement**
-
-Description courte : Étapes de build Unity → export WebGL → hébergement statique et déploiement backend.
-
-```mermaid
-%% Diagramme du pipeline de déploiement WebGL EduGame
-graph LR
-  DevRepo["Répertoire Git (Unity + backend)"]
-  CI["CI (GitHub Actions / Azure DevOps)"]
-  UnityBuild["Build Unity (Runner)"]
-  ExportWebGL["Export WebGL"]
-  StaticHost["Hébergement statique (Netlify / S3 + CDN)"]
-  BackendBuild["Build backend (Docker / venv)"]
-  BackendDeploy["Déploiement backend (Container / VM)"]
-  DB["PostgreSQL (production)"]
-  LRS["LRS externe (optionnel)"]
-
-  DevRepo --> CI
-  CI --> UnityBuild --> ExportWebGL --> StaticHost
-  CI --> BackendBuild --> BackendDeploy
-  BackendDeploy --> DB
-  BackendDeploy --> LRS
-```
-
-3) **Diagramme d’architecture système du projet EduGame WebGL + LMS**
-
-Description courte : Architecture logique — client WebGL, API backend, stockage et services externes.
-
-```mermaid
-%% Diagramme d'architecture système du projet EduGame WebGL + LMS
 flowchart TB
-  subgraph Client
-    WebGL["Unity WebGL (navigateur)"]
-  end
-
-  subgraph Backend
-    API["FastAPI REST API"]
-    Auth["JWT Auth / Users"]
-    XAPIService["xAPI Service (builders & sender)"]
-    Analytics["Analytics Service (get_xapi_statements)"]
-    Storage["PostgreSQL (schema adaptive)"]
-  end
-
-  subgraph External
-    LMS["Moodle / LRS (pull)"]
-    LRSPush["LRS externe (push)"]
-  end
+  WebGL["Client Unity WebGL (navigateur)"]
+  API["Backend FastAPI (backend/app)"]
+  Auth["Auth (JWT)"]
+  XAPI["xAPI Service (builders & sender)"]
+  DB["PostgreSQL (XAPIStatement, sessions, players)"]
+  LMS["LMS / LRS (Moodle ou LRS externe)"]
 
   WebGL -->|HTTPS| API
   API --> Auth
-  API --> XAPIService --> Storage
-  API --> Analytics --> Storage
-  API -->|optionnel push| LRSPush
-  LMS -->|pull /GET /xapi/statements| API
+  API --> XAPI --> DB
+  API --> DB
+  API -->|push| LMS
+  LMS -->|pull /xapi/statements| API
 ```
 
-4) **Diagramme de workflow d’intégration de contenu WebGL dans une plateforme LMS**
+Notes : le schéma s'appuie sur les dossiers et fichiers présents : `backend/app/services/xapi_service.py`, `backend/app/models.py`, `backend/app/routes/analytics.py`.
 
-Description courte : Séquence d'un flux typique depuis le jeu jusqu'à l'ingestion par le LMS.
+------------------------------------------------------------------------
+
+5. Analyse détaillée du backend
+-------------------------------
+
+5.1 Structure générale
+
+- Dossier principal : `backend/app/`.
+- Fichiers notables : `main.py`, `database.py`, `models.py`, `schemas.py`, `routes/` (endpoints), `services/` (xapi_service, analytics, auth), `utils/`.
+
+5.2 Services et responsabilités
+
+- `xapi_service.py` : construction des énoncés xAPI (verbs, actor, object, result, context) et fonction d'envoi (best-effort) vers un LRS externe si configuré.
+- `analytics_service.py` : fonctions d'agrégation et lecture paginée (`get_xapi_statements`) pour extraction et reporting.
+- `game_service.py` / `routes/game` : gestion du cycle de session (start_session, submit_answer, end_session) — génère statements non bloquants.
+- `auth_dependencies.py` et routes `auth.py` : gestion JWT (login/register) et dépendances FastAPI pour authentification.
+
+5.3 Logique métier observée
+
+- Sessions de jeu : création d'un enregistrement de session, association des réponses et des événements.
+- Questions / réponses : les réponses sont évaluées, converties en statements xAPI et persistées.
+- Emotion pipeline : détection via DeepFace / MediaPipe (présence de scripts de test), résultats stockés et enrichissent le contexte des énoncés xAPI.
+
+5.4 API / Endpoints (extraits pertinents)
+
+Liste non exhaustive (tirée du README précédent et des routes observées) :
+- `POST /auth/login`, `POST /auth/register`
+- `GET /player/profile`, `GET /player/courses`
+- `POST /game/session/start`
+- `GET /game/question` (GetNextQuestion)
+- `POST /game/answer` (SubmitAnswer)
+- `POST /game/emotion` (emotion detection)
+- `POST /game/session/end`
+- `GET /teacher/analytics/...` (résumés)
+- `GET /xapi/statements` (nouvel endpoint paginé)
+
+Remarque : la documentation des schémas Pydantic se trouve dans `backend/app/schemas.py` (notamment `XAPIStatementResponse`).
+
+5.5 Données et modèles
+
+- Modèle principal : `XAPIStatement` (id, session_id FK, statement_json JSON, sent bool, created_at timestamp).
+- Autres modèles : Player, Session, Question, Progress — implémentés dans `backend/app/models.py`.
+- Le stockage des statements conserve le JSON brut `statement_json` : ceci garantit compatibilité ADL mais nécessite précautions RGPD.
+
+5.6 Configuration
+
+- Variables d'environnement attendues : base de données, credentials LRS (`LRS_ENDPOINT`, `LRS_USERNAME`, `LRS_PASSWORD`), paramètres JWT.
+- Fichiers utiles : `.env.example` (présence probable dans `backend/`).
+
+5.7 Observations opérationnelles
+
+- L'endpoint `GET /xapi/statements` ajoute un modèle de récupération pull complémentaire au push existant.  
+- Les limitations de pagination (limit, offset) et le champ `sent` sont des mécanismes de sécurité et de robustesse.
+
+------------------------------------------------------------------------
+
+6. Analyse détaillée du frontend
+--------------------------------
+
+6.1 Structure générale
+
+- Projet Unity : répertoire `2dgameAllLeveles/` contenant `Assets/`, `Library/`, `ProjectSettings/`, `Scenes/`, `Scripts/` et fichiers de solution Visual Studio.
+- Principaux scripts : `GameManager.cs`, `APIManager.cs`, `EnemyManager`, etc. (dans `Assets/Scripts/`).
+
+6.2 Composants et pages
+
+- Client de jeu : scènes Unity (niveaux) et UI (menus, HUD).  
+- Module Webcam / Emotion : composant de capture et envoi d'images (intégration via tests `test_mediapipe_live.py`, `test_deepface_live.py` au niveau backend).
+
+6.3 Interactions et communication
+
+- Le client communique avec le backend via `UnityWebRequest` (endpoints REST listés ci-dessus).
+- Flux typique : sélection de cours → demande `StartSession` → boucle de questions (`GetNextQuestion`) → `SubmitAnswer` (avec metadata émotionnelle) → `EndSession`.
+
+6.4 Organisation du code
+
+- Scripts C# organisés par dossiers Unity (`Assets/Scripts/`).  
+- Fichiers de configuration de build WebGL gérés via Unity (PlayerSettings) et pipeline CI (non présent sous forme de code dans le repo mais documenté dans README).
+
+6.5 Observations
+
+- Le client est conçu pour être compilé en WebGL et hébergé comme site statique.  
+- Les appels réseau sont RESTful et attendent des réponses JSON conformes aux schémas Pydantic du backend.
+
+------------------------------------------------------------------------
+
+7. Modules spéciaux
+-------------------
+
+7.1 Unity / WebGL
+
+- Le projet Unity est complet dans `2dgameAllLeveles/` ; le build WebGL doit être produit via Unity Editor / CLI et compressé pour hébergement statique.
+- Le code Unity mentionne la gestion automatique de la difficulté (hearts mapping) et correctifs récents (gestion de `SetCourseId()` dans `GameManager.cs`).
+
+7.2 Intégration navigateur
+
+- Build WebGL exposé comme site statique ; communication avec backend via HTTPS.  
+- Pour l'intégration LMS, on publie le zip du build sur Netlify (ou autre hébergement statique) pour obtenir une URL publique.
+
+7.3 Tests et scripts utiles
+
+- Le backend contient des scripts de test pour les pipelines émotionnels : `test_deepface_live.py`, `test_mediapipe_live.py`.
+
+------------------------------------------------------------------------
+
+8. Technologies utilisées
+------------------------
+
+- Unity 2022.x (2D) — client de jeu
+- C# — scripts client
+- FastAPI (Python) — backend
+- SQLAlchemy — ORM
+- PostgreSQL — base de données relationnelle
+- JWT — authentification
+- DeepFace / MediaPipe — pipelines de détection d'émotion (intégration côté backend)
+- Netlify (ou hôte statique équivalent) — hébergement WebGL
+
+------------------------------------------------------------------------
+
+9. Modifications récentes
+-------------------------
+
+Résumé des changements observés
+
+- Ajout des schémas de réponse xAPI dans `backend/app/schemas.py` (`XAPIStatementResponse`, `XAPIStatementsResponse`).
+- Ajout du service de lecture paginée `get_xapi_statements` dans `backend/app/services/analytics_service.py`.
+- Ajout de l'endpoint `GET /xapi/statements` dans `backend/app/routes/analytics.py`.
+- Corrections mineures côté client : correction `SetCourseId()` dans `GameManager.cs` pour permettre le changement de cours sans verrouillage indésirable.
+
+Impact et analyse
+
+- Ces changements sont principalement orientés vers l'interopérabilité pédagogique : ajout d'un mode pull permettant au LMS de récupérer les statements stockés.  
+- Ils n'altèrent pas la construction des statements : `statement_json` est renvoyé tel que stocké, ce qui facilite la conformité ADL et la ré-ingestion.
+- Mesures recommandées : restreindre l'accès à l'endpoint par JWT + contrôle de rôle, journalisation des extractions, politique d'anonymisation si export vers tiers.
+
+------------------------------------------------------------------------
+
+10. Workflow global du projet
+----------------------------
+
+Flux opérationnel simplifié (client ↔ backend ↔ stockage)
 
 ```mermaid
-%% Diagramme de workflow d'intégration WebGL dans une plateforme LMS
 sequenceDiagram
-  participant Student as Student
-  participant WebGL as WebGLClient
+  participant Client as WebGLClient
   participant API as BackendAPI
   participant DB as Database
-  participant LMS as LMS
 
-  Student->>WebGL: Lance une session
-  WebGL->>API: POST /start_session
-  API->>DB: Crée session
-  WebGL->>API: POST /submit_answer (x fois)
-  API->>DB: Enregistre xAPI statements
-  Note right of DB: statements stockés tels quels (JSON)
-  Teacher->>LMS: Demande import des statements
-  LMS->>API: GET /xapi/statements?offset=0&limit=100
-  API->>DB: Récupère page statements (filtre possible)
-  API-->>LMS: Retourne statements page
-  LMS->>LMS: Ingest dans LRS ou agrège pour rapports
-```
-
-5) **Diagramme du processus de build et export WebGL Unity pour déploiement statique**
-
-Description courte : Étapes techniques pour produire un build WebGL optimisé et le déployer.
-
-```mermaid
-%% Diagramme du processus de build Unity → WebGL
-flowchart LR
-  A[Code Unity (Assets, Scenes, Scripts)]
-  B[Preparation: Player settings & WebGL config]
-  C[CI Runner: Unity CLI (batchmode) -> Build target WebGL]
-  D[Post-process: Compression, gzip/Brotli, configure index.html]
-  E[Artifact: WebGL build folder]
-  F[Deployment: Netlify / S3 + CloudFront]
-  A --> B --> C --> D --> E --> F
-```
-
----
-
-## Diagrammes additionnels — pipeline & déploiement
-
-Ces diagrammes détaillent les flux opérationnels et la topologie nécessaires pour garantir la récupération xAPI sécurisée et le déploiement en production.
-
-### A) Diagramme du pipeline d'intégration xAPI sécurisé (pull & push)
-
-Description : montre la double voie d'intégration — push vers un LRS externe et pull sécurisé par le LMS via l'endpoint paginé.
-
-```mermaid
-%% Pipeline xAPI sécurisé — push & pull
-flowchart LR
-  WebGL["Client Unity WebGL"] -->|POST events| API["FastAPI /xapi endpoints"]
-  API -->|Persist| DB["PostgreSQL: XAPIStatement"]
-  API -->|Attempt push| LRSPush["LRS externe (optionnel)"]
-  LRSPush -.->|ack / retry| API
-
-  LMS["Moodle / LRS (pull)"] -->|GET /xapi/statements (auth)| API
-  subgraph Security
-    API --> Auth["Auth: JWT / API Key / Role check"]
-    Auth --> Audit["Audit log (user, ip, filters)"]
+  Client->>API: POST /game/session/start
+  API->>DB: create session
+  loop question loop
+    Client->>API: GET /game/question
+    API->>DB: read question
+    Client->>API: POST /game/answer (with emotion)
+    API->>DB: store XAPIStatement
   end
-
-  DB -->|rowselection + pagination| API
-  API -->|returns JSON page| LMS
+  Client->>API: POST /game/session/end
+  API->>DB: finalize session
 ```
 
-### B) Diagramme CI/CD détaillé — Unity + Backend
+------------------------------------------------------------------------
 
-Description : étapes concrètes à automatiser en CI pour produire l'artéfact WebGL, tester, et déployer backend.
+11. Intégration LMS — Workflow réel fourni
+-----------------------------------------
+
+Le workflow exact fourni par l'utilisateur pour intégrer le build WebGL dans le LMS est le suivant. Il doit être reproduit tel quel pour la validation d'intégration :
+
+1. Zipper le dossier du build WebGL (`EduFrog_webGL_test.zip`).
+2. Dans le LMS, activer « Turn editing on ». 
+3. Choisir « Add activity or resource ». 
+4. Sélectionner « URL ». 
+5. Utiliser Netlify pour convertir le dossier zip en URL publique (uploader le zip ou publier le build). 
+6. Récupérer l'URL fournie par Netlify. 
+7. Dans la ressource LMS, coller l'URL et donner le titre « EduFrog ». 
+8. Sauvegarder : la ressource pointe désormais vers le build WebGL intégré.
+
+Remarque : cette procédure correspond à l'approche « hébergement statique + lien LMS » et n'exige pas d'API spécifique côté LMS.
+
+------------------------------------------------------------------------
+
+12. Déploiement via Netlify (procédé détaillé)
+--------------------------------------------
+
+Étapes recommandées pour produire et déployer le build WebGL :
+
+1. Ouvrir le projet Unity (`2dgameAllLeveles/`) dans l'Editor (Unity 2022.x compatible).
+2. Configurer PlayerSettings → WebGL ; s'assurer des paramètres de compression (gzip/Brotli) et du support WebGL 2.0.
+3. Lancer le build WebGL (File → Build). Récupérer le dossier `Build` complet.
+4. Compresser le dossier WebGL en `EduFrog_webGL_test.zip`.
+5. Sur Netlify : Drag & drop du dossier décompressé ou du zip (site static) → Netlify génère une URL publique.
+6. Vérifier que les appels API côté client pointent vers l'URL du backend FastAPI (configuration dans `APIManager.cs` ou PlayerPrefs du projet Unity).
+
+Diagramme : pipeline de build et publication
 
 ```mermaid
-%% CI/CD détaillé
-flowchart TD
-  repo["Git repository (main)"] --> action["CI Trigger (push/pr)"]
-  action --> build_unity["Step: Build Unity WebGL (self-hosted runner or Unity Cloud)"]
-  build_unity --> test_unity["Step: Unit/Integration tests (edit mode)"]
-  test_unity --> export_artifact["Step: Export & compress WebGL artifact"]
-  export_artifact --> deploy_static["Step: Deploy to Netlify/S3 + CDN"]
-
-  action --> backend_build["Step: Setup Python env"]
-  backend_build --> backend_tests["Step: Run backend tests + linters"]
-  backend_tests --> dockerize["Step: Build Docker image (optional)"]
-  dockerize --> deploy_backend["Step: Deploy to Cloud (K8s / VM / App Service)"]
-
-  deploy_backend --> smoke["Step: Smoke tests / Health checks"]
-  smoke --> notify["Step: Notify (Slack / Email)"]
+flowchart LR
+  UnityEditor["Unity Editor (Build WebGL)"] --> BuildArtifact["Build WebGL (folder)"]
+  BuildArtifact --> Zip["Zip: EduFrog_webGL_test.zip"]
+  Zip --> Netlify["Netlify: publish site / get URL"]
+  Netlify --> LMS["Moodle (Add URL resource)"]
 ```
 
-### C) Diagramme de déploiement réseau et composants (prod)
+Remarque pratique : Netlify accepte aussi le drag-and-drop du dossier `Build` (non zippé) et génère l'URL.
 
-Description : topologie réseau recommandée — CDN pour WebGL, reverse-proxy TLS, backend derrière load balancer, base de données en réseau privé.
+------------------------------------------------------------------------
+
+13. Diagrammes académiques pertinents
+------------------------------------
+
+Les diagrammes inclus sont limités aux artefacts réellement présents ou nécessaires au projet : architecture globale, workflow session, diagramme de flux de données xAPI, diagramme de structure backend, diagramme de structure frontend, pipeline Netlify.
+
+13.1 Diagramme de cas d'utilisation du projet EduFrog
+
+Description : acteurs et cas d'usage principaux.
 
 ```mermaid
-%% Topologie réseau production
 graph LR
-  user["Utilisateur (navigateur)"] --> CDN["CDN / Netlify (WebGL)"]
-  CDN -->|HTTPS| Browser["Fichiers statiques WebGL"]
-  Browser -->|HTTPS API| LB["Load Balancer / API Gateway"]
-  LB --> API["FastAPI (containers)"]
-  API --> Redis["Redis (private subnet)"]
-  API --> DB["PostgreSQL (private subnet)"]
-  API --> LRSPush["LRS externe (outbound)"]
-  Admin["Admin / LMS"] -->|VPN / TLS| LB
-  subgraph security
-    LB --> WAF["WAF / Rate limiting"]
-    LB --> AuthN["AuthN & AuthZ (JWT, OAuth)"]
-  end
+  Student["Étudiant (WebGL)"]
+  Teacher["Enseignant"]
+  Admin["Administrateur"]
+  LMS["LMS / LRS"]
+
+  Student --> Start["Jouer une session"]
+  Student --> Answer["Soumettre réponse"]
+  Teacher --> Report["Consulter analytics / importer xAPI"]
+  Admin --> Config["Gérer LRS / API keys"]
+
+  Start --> API
+  Answer --> API
+  API --> DB
+  API --> LMS
 ```
 
----
+13.2 Diagramme de séquence — cycle de session (simplifié)
 
-## 4. Workflow global du système — Description pas-à-pas
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as API
+  participant D as DB
 
-1. Authentification et création de session : le client WebGL appelle `POST /start_session` pour initialiser une session de jeu (avec ou sans JWT selon usage).  
-2. Interaction et enregistrement : à chaque interaction pertinente (réponse à une question, événement de jeu, détection d'émotion), le backend construit un énoncé xAPI et le persiste dans `XAPIStatement`.  
-3. Transmission asynchrone (optionnel) : le backend tente d'envoyer les énoncés vers un LRS externe (best-effort).  
-4. Récupération pour le LMS : un plugin Moodle ou un administrateur effectue `GET /xapi/statements` (avec filtres/pagination) pour récupérer et ingérer les énoncés.  
-5. Ingestion et reporting : le LMS / LRS agrège, archive et produit des rapports pédagogiques.
+  C->>A: POST start_session
+  A->>D: INSERT session
+  loop questions
+    C->>A: GET question
+    A->>D: SELECT question
+    C->>A: POST answer + emotion
+    A->>D: INSERT XAPIStatement
+  end
+  C->>A: POST end_session
+  A->>D: UPDATE session
+```
 
----
+13.3 Diagramme de flux de données xAPI
 
-## 5. Considérations techniques, sécurité et recommandations (prêtes pour un mémoire)
+```mermaid
+flowchart LR
+  Client["Client WebGL"] -->|POST statement| API["Endpoint /xapi or /game/answer"]
+  API -->|persist| DB["Table XAPIStatement (statement_json)"]
+  DB -->|page| API
+  API -->|GET /xapi/statements| LMS["LMS / external LRS"]
+```
 
-Sécurité & contrôle d'accès
+13.4 Diagramme de composants — structure backend
 
-- Exiger `Depends(get_current_user)` et vérifier rôle (enseignant / administrateur) pour `GET /xapi/statements`.  
-- Ajouter journalisation (audit) des extractions (user, token, IP, filtres utilisés).
+```mermaid
+graph TD
+  subgraph Backend
+    Routes["routes/ (auth, game, analytics)"]
+    Services["services/ (xapi_service, analytics, auth)"]
+    Models["models.py (XAPIStatement, Player, Session)"]
+    Schemas["schemas.py (Pydantic)"]
+    DB["database.py (SQLAlchemy)"]
+  end
+  Routes --> Services --> Models --> DB
+  Routes --> Schemas
+```
 
-Vie privée & conformité
+13.5 Diagramme de structure frontend (Unity)
 
-- Les statements peuvent contenir PII dans `actor`. Documenter et prévoir une option d'anonymisation pour exports.  
-- Spécifier politique de rétention et modes de suppression pour conformité RGPD.
+```mermaid
+graph LR
+  subgraph UnityProject
+    Scenes["Assets/Scenes"]
+    Scripts["Assets/Scripts (GameManager, APIManager, EnemyManager)"]
+    UI["Assets/UI (menus, HUD)"]
+  end
+  Scenes --> Scripts --> UI
+```
 
-Scalabilité
+------------------------------------------------------------------------
 
-- Indexer `created_at`, `session_id`, `player_id`.  
-- Pour très gros volumes, fournir export par lot (ETL) ou streaming (chunked responses).  
+14. Section démonstrations (placeholders)
+----------------------------------------
 
-Compatibilité LRS
+Préparer les éléments visuels pour le mémoire :
 
-- Vérifier la présence de `actor`, `verb.id` et `object.id` pour conformité ADL.  
-- Fournir un endpoint optionnel de mapping pour faire correspondre `actor` → identifiants LMS si nécessaire.
+- Screenshot frontend (jeu WebGL) : [à insérer]
+- Screenshot LMS (ressource URL) : [à insérer]
+- Screenshot WebGL (console / network) : [à insérer]
+- Vidéo de démonstration : [à insérer]
 
-Tests & validation
+Ces emplacements restent vides ici par contrainte demandée.
 
-- Ajouter tests d'intégration pour `GET /xapi/statements` (authentifié), vérification de pagination et conformité du schéma.
+------------------------------------------------------------------------
 
----
+15. Conclusion
+--------------
 
-## 6. Section démonstration (placeholders)
+Cette documentation présente une vision complète et vérifiable du projet EduFrog telle qu'elle ressort des fichiers du dépôt. Les modifications récentes se concentrent sur l'ajout d'un endpoint paginé pour récupérer des énoncés xAPI, renforçant l'interopérabilité avec les LMS. Pour finaliser l'intégration en production, il est recommandé de :
 
-**📸 Démonstrations**  
-Screenshot 1 : [à insérer]  
-Screenshot 2 : [à insérer]  
-Vidéo démo : [à insérer]
+- Appliquer un contrôle d'accès strict (JWT + vérification de rôle) sur l'endpoint `GET /xapi/statements`.
+- Mettre en place une journalisation d'extraction et une politique d'anonymisation pour les exports tiers.
+- Indexer les colonnes fréquemment interrogées (`created_at`, `session_id`, `player_id`) pour optimiser les lectures paginées.
 
----
+------------------------------------------------------------------------
 
-## 7. Conclusion
+Annexe — fichiers clés (emplacement relatif)
 
-Résumé : les modifications récentes ajoutent un point d'accès serveur paginé aux statements xAPI, facilitant l'intégration LMS et offrant un meilleur contrôle pour l'ingestion, l'audit et l'archivage.  
-Résultat : système prêt pour intégration pédagogique, sous réserve d'un durcissement de l'accès et d'une gestion claire de la vie privée.  
-Utilité pédagogique : le système permet des analyses fines des parcours apprenants et des ajustements adaptatifs fondés sur performance et émotion.
+- `2dgameAllLeveles/` : projet Unity (Assets, Scenes, Scripts)
+- `backend/app/main.py` : point d'entrée FastAPI
+- `backend/app/models.py` : modèles SQLAlchemy (XAPIStatement, Session, Player)
+- `backend/app/schemas.py` : Pydantic schemas (XAPIStatementResponse ajouté)
+- `backend/app/services/xapi_service.py` : construction/envoi des statements
+- `backend/app/services/analytics_service.py` : fonction `get_xapi_statements`
+- `backend/app/routes/analytics.py` : endpoint `GET /xapi/statements`
 
----
+------------------------------------------------------------------------
 
-## Remarques finales et actions proposées
-
-- Si tu veux, je peux :  
-  - appliquer immédiatement l'enforcement JWT et vérification de rôle sur `GET /xapi/statements` (patch minimal),  
-  - ou générer un fichier Markdown autonome `DOCUMENTATION_PFE.md` séparé.  
-
----
-
-**Fichier modifié**: `README.md` (mis à jour pour PFE).  
-Pour toute modification stylistique ou ajout d'annexes (logs, extraits de code, schémas PlantUML), indique la section à enrichir.
+Fin de la documentation.
