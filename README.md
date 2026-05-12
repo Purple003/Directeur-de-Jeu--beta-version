@@ -6,11 +6,12 @@
 
 ---
 
+
 **Résumé**
 
-Ce document présente une synthèse académique et technique du projet EduGame, une plateforme d'apprentissage adaptatif constituée d'un client Unity 2D exporté en WebGL et d'un backend FastAPI. Le projet enregistre les interactions apprenant sous forme d'énoncés xAPI, les stocke dans une base PostgreSQL, et expose des mécanismes d'intégration avec des LRS ou un LMS (par ex. Moodle).
+Ce document présente une synthèse académique et technique du projet EduGame, une plateforme d'apprentissage adaptatif composée d'un client Unity 2D exporté en WebGL et d'un backend FastAPI. Le projet enregistre les interactions des apprenants sous forme d'énoncés xAPI, les stocke dans une base PostgreSQL et expose des mécanismes d'intégration avec un LRS ou un LMS (par ex. Moodle).
 
-Objectif du document : fournir un contenu structuré, technique et prêt à intégrer dans un mémoire de fin d'études (PFE), incluant l'analyse des modifications récentes, diagrammes système à jour et recommandations techniques.
+Objectif du document : fournir un contenu structuré, technique et immédiatement réutilisable dans un mémoire de fin d'études (PFE), incluant une analyse détaillée des modifications récentes, des diagrammes système à jour et des recommandations d'ingénierie.
 
 ---
 
@@ -66,15 +67,31 @@ Ancien workflow vs nouveau workflow
 - Ancien : génération et tentative d'envoi (push) vers un LRS externe ; dépendance à la disponibilité du LRS pour l'archivage.
 - Nouveau : ajout d'un point d'accès pull côté backend permettant au LMS/LRS de récupérer directement les énoncés stockés (pagination + filtres). Ainsi, l'intégration peut se faire par ré-ingestion ou extraction directe sans dépendre uniquement du push externe.
 
+
 Impact global
 
-- Avantages : meilleure résilience de l'intégration LMS, facilitation des audits et exports, compatibilité plus simple avec des outils d'analytics (Learning Locker, Moodle plugins).  
-- Risques : nécessité d'enforcer l'authentification et les politiques d'accès (qui peut lire ces énoncés), gestion de la vie privée (PII dans `actor`), et contraintes de performance pour gros volumes (indexation, streaming).
+- Avantages : meilleure résilience de l'intégration LMS, facilitation des audits et des exports, et compatibilité simplifiée avec des outils d'analytics (Learning Locker, plugins Moodle).
+- Risques : nécessité de durcir l'accès (authentification et autorisations), protection de la vie privée (PII dans le champ `actor`) et contraintes de performance en cas de gros volumes (indexation, pagination/streaming).
 
-Recommandation immédiate
+Recommandations immédiates
 
-- Enforcer `Depends(get_current_user)` + contrôle de rôle (enseignant/admin) sur `GET /xapi/statements`.  
-- Documenter la présence possible de données personnelles dans `actor` et prévoir une option d'anonymisation pour exports tiers.
+- Appliquer `Depends(get_current_user)` et vérifier les rôles (enseignant / administrateur) sur l'endpoint `GET /xapi/statements`.
+- Ajouter journalisation (audit) des extractions (utilisateur, token, IP, paramètres de filtrage).
+- Documenter la présence possible de données personnelles dans `actor` et prévoir une option d'anonymisation pour les exports destinés à des tiers.
+
+### 2.1 Inventaire technique des fichiers modifiés récemment
+
+But : permettre une revue de code sans modifier les sources, en listant précisément les fichiers touchés et leur rôle.
+
+- `backend/app/schemas.py` : ajout des schémas Pydantic `XAPIStatementResponse` et `XAPIStatementsResponse` pour formaliser la réponse paginée.
+- `backend/app/services/analytics_service.py` : ajout de `get_xapi_statements(db, session_id=None, player_id=None, limit=100, offset=0)` — requêtes SQLAlchemy sécurisées, filtres optionnels et comptage total.
+- `backend/app/routes/analytics.py` : ajout de l'endpoint `GET /xapi/statements` (paramètres : `session_id`, `player_id`, `limit`, `offset`) ; enveloppe de réponse existante respectée.
+- `backend/app/services/xapi_service.py` : (inchangé ici) responsable de la construction et envoi best-effort des statements vers un LRS externe.
+- `backend/app/models.py` : modèle `XAPIStatement` (id, session_id FK, statement_json JSON, sent bool, created_at timestamp) — utilisé par le service et l'endpoint de lecture.
+
+Remarque : cette documentation a été réalisée par lecture et analyse statique des fichiers listés ; aucun code n'a été modifié hors du `README.md`.
+
+---
 
 ---
 
@@ -200,6 +217,77 @@ flowchart LR
   E[Artifact: WebGL build folder]
   F[Deployment: Netlify / S3 + CloudFront]
   A --> B --> C --> D --> E --> F
+```
+
+---
+
+## Diagrammes additionnels — pipeline & déploiement
+
+Ces diagrammes détaillent les flux opérationnels et la topologie nécessaires pour garantir la récupération xAPI sécurisée et le déploiement en production.
+
+### A) Diagramme du pipeline d'intégration xAPI sécurisé (pull & push)
+
+Description : montre la double voie d'intégration — push vers un LRS externe et pull sécurisé par le LMS via l'endpoint paginé.
+
+```mermaid
+%% Pipeline xAPI sécurisé — push & pull
+flowchart LR
+  WebGL["Client Unity WebGL"] -->|POST events| API["FastAPI /xapi endpoints"]
+  API -->|Persist| DB["PostgreSQL: XAPIStatement"]
+  API -->|Attempt push| LRSPush["LRS externe (optionnel)"]
+  LRSPush -.->|ack / retry| API
+
+  LMS["Moodle / LRS (pull)"] -->|GET /xapi/statements (auth)| API
+  subgraph Security
+    API --> Auth["Auth: JWT / API Key / Role check"]
+    Auth --> Audit["Audit log (user, ip, filters)"]
+  end
+
+  DB -->|rowselection + pagination| API
+  API -->|returns JSON page| LMS
+```
+
+### B) Diagramme CI/CD détaillé — Unity + Backend
+
+Description : étapes concrètes à automatiser en CI pour produire l'artéfact WebGL, tester, et déployer backend.
+
+```mermaid
+%% CI/CD détaillé
+flowchart TD
+  repo["Git repository (main)"] --> action["CI Trigger (push/pr)"]
+  action --> build_unity["Step: Build Unity WebGL (self-hosted runner or Unity Cloud)"]
+  build_unity --> test_unity["Step: Unit/Integration tests (edit mode)"]
+  test_unity --> export_artifact["Step: Export & compress WebGL artifact"]
+  export_artifact --> deploy_static["Step: Deploy to Netlify/S3 + CDN"]
+
+  action --> backend_build["Step: Setup Python env"]
+  backend_build --> backend_tests["Step: Run backend tests + linters"]
+  backend_tests --> dockerize["Step: Build Docker image (optional)"]
+  dockerize --> deploy_backend["Step: Deploy to Cloud (K8s / VM / App Service)"]
+
+  deploy_backend --> smoke["Step: Smoke tests / Health checks"]
+  smoke --> notify["Step: Notify (Slack / Email)"]
+```
+
+### C) Diagramme de déploiement réseau et composants (prod)
+
+Description : topologie réseau recommandée — CDN pour WebGL, reverse-proxy TLS, backend derrière load balancer, base de données en réseau privé.
+
+```mermaid
+%% Topologie réseau production
+graph LR
+  user["Utilisateur (navigateur)"] --> CDN["CDN / Netlify (WebGL)"]
+  CDN -->|HTTPS| Browser["Fichiers statiques WebGL"]
+  Browser -->|HTTPS API| LB["Load Balancer / API Gateway"]
+  LB --> API["FastAPI (containers)"]
+  API --> Redis["Redis (private subnet)"]
+  API --> DB["PostgreSQL (private subnet)"]
+  API --> LRSPush["LRS externe (outbound)"]
+  Admin["Admin / LMS"] -->|VPN / TLS| LB
+  subgraph security
+    LB --> WAF["WAF / Rate limiting"]
+    LB --> AuthN["AuthN & AuthZ (JWT, OAuth)"]
+  end
 ```
 
 ---
