@@ -398,5 +398,73 @@ Annexe — fichiers clés (emplacement relatif)
 - `backend/app/routes/analytics.py` : endpoint `GET /xapi/statements`
 
 ------------------------------------------------------------------------
+##  Demo — Adaptive Learning Game (AI + Emotion + NPC Interaction)
+
+---
+
+###  Course Selection + Real-time Emotion Detection (Camera)
+
+https://github.com/user-attachments/assets/88ca7fc1-77f3-4873-a910-a50b6ebc628a
+
+ Cette partie montre :
+- Sélection du cours par le joueur  
+- Intégration de la caméra  
+- Détection des émotions en temps réel  
+- Adaptation de l’expérience selon l’état émotionnel du joueur  
+
+---
+
+###  NPC Interaction — Simplified & Reformulated Explanation
+
+https://github.com/user-attachments/assets/cc4ca0a3-71be-422b-b153-17f831e99da2
+
+ Ici, le joueur interagit avec un NPC qui :
+- Explique le contenu du cours de manière simplifiée  
+- Reformule les concepts pour faciliter la compréhension  
+- Adapte l’explication selon le niveau du joueur  
+
+---
+
+##  Level 1 — Adaptive AI System
+
+<h3 align="center">
+Adaptive Difficulty Based on Player Answers, Enemy Behavior, and Emotion Detection
+</h3>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/6f2f439c-c867-4120-99a0-c2dff1568274" width="30%" />
+  <img src="https://github.com/user-attachments/assets/d0704a61-bf80-4507-a175-46c732aa9a42" width="30%" />
+  <img src="https://github.com/user-attachments/assets/164603bd-d4fb-46be-8a32-6136910aaf15" width="30%" />
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/02310f1b-a76c-4696-8634-98f133eeb3c2" width="30%" /> 
+</p>
+
+---
+
+##  Difficulty Levels Showcase
+
+###  Hard Level
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/fd72ae81-d3f5-4e2e-9419-12e4cf938cee" width="30%" />
+  <img src="https://github.com/user-attachments/assets/49634b31-d446-4dd3-b784-f723104c6359" width="30%" />
+  <img src="https://github.com/user-attachments/assets/906b42e1-d54f-44a7-9bec-a7ad79f92dce" width="30%" />
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c55d24bd-5b12-4d9a-87b5-b257801eb646" width="30%" />
+  <img src="https://github.com/user-attachments/assets/93e9e789-2917-47fb-a5d5-03ad8bc0131d" width="30%" />
+</p>
+
+---
+
+###  Easy Level
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b1bd95ae-fca7-4bca-8334-f799bbe8cc5b" width="30%" />
+  <img src="https://github.com/user-attachments/assets/dc7a48d6-ac78-4fde-98af-4d3b349e0e2c" width="30%" />
+</p>
 
 Fin de la documentation.
